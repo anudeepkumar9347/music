@@ -9,12 +9,25 @@ import {
 import './styles.css';
 
 const DEV_TOKEN = import.meta.env.VITE_API_TOKEN || 'orbit-local-dev-token';
+const ENV_API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
 const getToken = () => localStorage.getItem('orbit-api-token') || DEV_TOKEN;
+const getApiBaseUrl = () => (localStorage.getItem('orbit-api-url') ?? ENV_API_URL).replace(/\/+$/, '');
+const apiUrl = path => `${getApiBaseUrl()}${path}`;
 const api = async (path, options = {}) => {
+  const savedToken = localStorage.getItem('orbit-api-token');
   const headers = new Headers(options.headers || {});
-  headers.set('Authorization', `Bearer ${getToken()}`);
+  headers.set('Authorization', `Bearer ${savedToken || DEV_TOKEN}`);
   if (!(options.body instanceof FormData)) headers.set('Accept', 'application/json');
-  const response = await fetch(path, { ...options, headers });
+  let response = await fetch(apiUrl(path), { ...options, headers });
+  if (response.status === 401 && savedToken && savedToken !== DEV_TOKEN && !options.body) {
+    const fallbackHeaders = new Headers(headers);
+    fallbackHeaders.set('Authorization', `Bearer ${DEV_TOKEN}`);
+    const fallbackResponse = await fetch(apiUrl(path), { ...options, headers: fallbackHeaders });
+    if (fallbackResponse.ok) {
+      localStorage.removeItem('orbit-api-token');
+      response = fallbackResponse;
+    }
+  }
   if (!response.ok) {
     let detail = '';
     try { const body = await response.json(); detail = body.detail || body.error || ''; } catch { /* use status */ }
@@ -77,6 +90,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [creditsOpen, setCreditsOpen] = useState(false);
   const [tokenDraft, setTokenDraft] = useState(getToken());
+  const [apiUrlDraft, setApiUrlDraft] = useState(getApiBaseUrl());
 
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (quiet) setRefreshing(true); else setBusy(true);
@@ -223,6 +237,31 @@ function App() {
   async function createFolder() {
     setForm({ name: '', parent_id: folderId }); setDialog({ kind: 'create-folder' });
   }
+  function beginDriveDrag(event, kind, target) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('application/orbit-drive-item', JSON.stringify({ kind, id: target.id, parentId: kind === 'file' ? target.folder_id ?? null : target.parent_id ?? null }));
+    event.dataTransfer.setData('text/plain', target.name);
+  }
+  async function dropDriveItem(event, destinationId) {
+    event.preventDefault(); event.stopPropagation();
+    event.currentTarget.classList.remove('drag-over');
+    const raw = event.dataTransfer.getData('application/orbit-drive-item');
+    if (!raw) return;
+    try {
+      const dragged = JSON.parse(raw);
+      if (dragged.kind === 'folder' && Number(dragged.id) === Number(destinationId)) return;
+      if (dragged.parentId === destinationId) return;
+      const endpoint = dragged.kind === 'folder' ? `/api/folders/${dragged.id}` : `/api/media/${dragged.id}`;
+      const body = dragged.kind === 'folder' ? { parent_id: destinationId } : { folder_id: destinationId };
+      await api(endpoint, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      flash(`Moved ${dragged.kind} to ${destinationId == null ? 'My Drive' : 'folder'}.`);
+      await load({ quiet: true });
+    } catch (cause) { setError(cause.message || 'Could not move this item.'); }
+  }
+  function allowDriveDrop(event) {
+    if (event.dataTransfer.types.includes('application/orbit-drive-item')) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; event.currentTarget.classList.add('drag-over'); }
+  }
+  function leaveDriveDrop(event) { event.currentTarget.classList.remove('drag-over'); }
   function editTarget(target, type) {
     setForm(type === 'folder' ? { name: target.name, parent_id: target.parent_id } : {
       name: target.name, title: target.title || '', artist: target.artist || '', album: target.album || '', language: target.language || '', genre: target.genre || '', description: target.description || '', release_date: target.release_date || '', folder_id: target.folder_id ?? null, media_type: target.media_type || (target.kind === 'movie' ? 'movie' : undefined),
@@ -316,9 +355,15 @@ function App() {
   async function saveToken(event) {
     event.preventDefault();
     if (!tokenDraft.trim()) { setError('The API token cannot be empty.'); return; }
-    localStorage.setItem('orbit-api-token', tokenDraft.trim()); setSettingsOpen(false); await load();
+    const baseUrl = apiUrlDraft.trim().replace(/\/+$/, '');
+    if (baseUrl) {
+      try { new URL(baseUrl); } catch { setError('Enter a valid API server URL, such as http://192.168.1.20:8000.'); return; }
+    }
+    localStorage.setItem('orbit-api-token', tokenDraft.trim());
+    localStorage.setItem('orbit-api-url', baseUrl);
+    setSettingsOpen(false); await load();
   }
-  function playbackUrl(item) { return `/api/media/${item.id}?token=${encodeURIComponent(getToken())}`; }
+  function playbackUrl(item) { return apiUrl(`/api/media/${item.id}?token=${encodeURIComponent(getToken())}`); }
 
   const meta = pageMeta[section];
   const libraryTitle = section === 'drive' && currentFolder ? currentFolder.name : meta.title;
@@ -336,7 +381,7 @@ function App() {
       </nav>
       <div className="sidebar-bottom">
         <div className="sidebar-server"><span className="server-pulse" /><div><strong>NAS connected</strong><small>Private server</small></div></div>
-        <button className="settings-link" onClick={() => { setTokenDraft(getToken()); setSettingsOpen(true); }}><Settings2 size={17} /> Connection settings</button>
+        <button className="settings-link" onClick={() => { setTokenDraft(getToken()); setApiUrlDraft(getApiBaseUrl()); setSettingsOpen(true); }}><Settings2 size={17} /> Connection settings</button>
         <button className="settings-link" onClick={() => setCreditsOpen(true)}>About &amp; credits</button>
         <div className="sidebar-foot"><ShieldCheck size={16} /><span>Files stay on your network</span></div>
       </div>
@@ -348,7 +393,7 @@ function App() {
         <div className="top-actions">
           <button className="icon-button" aria-label="Refresh library" onClick={() => void load()} disabled={busy}><RefreshCw size={18} className={busy ? 'spin' : ''} /></button>
           {section !== 'overview' && <label className="button button-dark upload-button"><Upload size={16} /> {section === 'music' ? 'Add music' : section === 'movies' ? 'Add videos' : 'Upload files'}<input type="file" multiple accept={section === 'music' ? 'audio/*' : section === 'movies' ? 'video/*' : undefined} onChange={section === 'music' || section === 'movies' ? beginMediaUpload : upload} disabled={busy} /></label>}
-          <button className="avatar" title="Connection settings" onClick={() => { setTokenDraft(getToken()); setSettingsOpen(true); }}>O</button>
+          <button className="avatar" title="Connection settings" onClick={() => { setTokenDraft(getToken()); setApiUrlDraft(getApiBaseUrl()); setSettingsOpen(true); }}>O</button>
         </div>
       </header>
 
@@ -366,14 +411,14 @@ function App() {
         </div>
         {section === 'music' && <div className="collection-bar"><div className="collection-icon"><ListMusic size={17}/></div><div className="collection-copy"><strong>Playlists</strong><small>Organize tracks for the mobile player</small></div><select value={activePlaylist} onChange={event => void choosePlaylist(event.target.value)} aria-label="Select playlist"><option value="">All tracks</option>{playlists.map(playlist => <option key={playlist.id} value={playlist.id}>{playlist.name} · {playlist.items}</option>)}</select><button className="button button-light" onClick={() => void playlistAction('create')}><Plus size={15}/> New playlist</button>{activePlaylist && <><button className="subtle-action" onClick={() => void playlistAction('rename', playlists.find(value => String(value.id) === activePlaylist))}><Pencil size={14}/> Rename</button><button className="subtle-action danger-text" onClick={() => void playlistAction('delete', playlists.find(value => String(value.id) === activePlaylist))}><Trash2 size={14}/> Delete</button></>}</div>}
         {section === 'drive' && <div className="breadcrumbs">
-          <button className={!folderId ? 'crumb-current' : ''} onClick={() => { setFolderId(null); setFolderTrail([]); }}>My Drive</button>
-          {folderTrail.map((folder, index) => <React.Fragment key={folder.id}><ChevronRight size={14} /><button className={index === folderTrail.length - 1 ? 'crumb-current' : ''} onClick={() => goToTrail(index)}>{folder.name}</button></React.Fragment>)}
+          <button className={!folderId ? 'crumb-current' : ''} onClick={() => { setFolderId(null); setFolderTrail([]); }} onDragOver={allowDriveDrop} onDragLeave={leaveDriveDrop} onDrop={event => void dropDriveItem(event, null)}>My Drive</button>
+          {folderTrail.map((folder, index) => <React.Fragment key={folder.id}><ChevronRight size={14} /><button className={index === folderTrail.length - 1 ? 'crumb-current' : ''} onClick={() => goToTrail(index)} onDragOver={allowDriveDrop} onDragLeave={leaveDriveDrop} onDrop={event => void dropDriveItem(event, folder.id)}>{folder.name}</button></React.Fragment>)}
         </div>}
         {uploadProgress && <div className="upload-status"><LoaderCircle size={16} className="spin" />{uploadProgress}<span className="progress-track"><span /></span></div>}
-        <div className="section-heading"><div><p className="eyebrow">{section === 'drive' ? 'YOUR FILES' : section === 'favorites' ? 'SAVED ITEMS' : 'LIBRARY CONTENT'}</p><h2>{visibleItems.length + visibleFolders.length} items</h2></div><span className="view-note">Synced with mobile apps</span></div>
+        <div className="section-heading"><div><p className="eyebrow">{section === 'drive' ? 'YOUR FILES' : section === 'favorites' ? 'SAVED ITEMS' : 'LIBRARY CONTENT'}</p><h2>{visibleItems.length + visibleFolders.length} items</h2></div><span className="view-note">{section === 'drive' ? 'Drag files or folders onto a folder to move them' : 'Synced with mobile apps'}</span></div>
         <div className={`library-grid ${section === 'drive' && driveLayout === 'list' ? 'list-layout' : ''}`}>
-          {visibleFolders.map(folder => <FolderCard key={`folder-${folder.id}`} folder={folder} folders={folders} items={items} onOpen={openFolder} onEdit={() => editTarget(folder, 'folder')} onDelete={() => void removeTarget(folder, 'folder')} />)}
-          {visibleItems.map(item => <MediaCard key={item.id} item={item} liked={favoriteIds.has(item.id)} onOpen={() => setSelected(item)} onEdit={() => editTarget(item, 'media')} onDelete={() => void removeTarget(item, 'media')} onFavorite={() => void toggleFavorite(item)} onPlaylist={section === 'music' ? () => { if (activePlaylist) void playlistAction('remove-track', null, item); else if (playlists.length === 1) void playlistAction('add-track', playlists[0], item); else { setPlaylistChoice(String(playlists[0]?.id || '')); setPlaylistPicker(item); } } : null} playlistMode={Boolean(activePlaylist)} onDownload={section === 'drive' ? () => window.open(`/api/media/${item.id}?token=${encodeURIComponent(getToken())}`, '_blank', 'noopener') : null} />)}
+          {visibleFolders.map(folder => <FolderCard key={`folder-${folder.id}`} folder={folder} folders={folders} items={items} draggable={section === 'drive'} onDragStart={event => beginDriveDrag(event, 'folder', folder)} onDragOver={allowDriveDrop} onDragLeave={leaveDriveDrop} onDrop={event => void dropDriveItem(event, folder.id)} onOpen={openFolder} onEdit={() => editTarget(folder, 'folder')} onDelete={() => void removeTarget(folder, 'folder')} />)}
+          {visibleItems.map(item => <MediaCard key={item.id} item={item} liked={favoriteIds.has(item.id)} draggable={section === 'drive'} onDragStart={event => beginDriveDrag(event, 'file', item)} onOpen={() => setSelected(item)} onEdit={() => editTarget(item, 'media')} onDelete={() => void removeTarget(item, 'media')} onFavorite={() => void toggleFavorite(item)} onPlaylist={section === 'music' ? () => { if (activePlaylist) void playlistAction('remove-track', null, item); else if (playlists.length === 1) void playlistAction('add-track', playlists[0], item); else { setPlaylistChoice(String(playlists[0]?.id || '')); setPlaylistPicker(item); } } : null} playlistMode={Boolean(activePlaylist)} onDownload={section === 'drive' ? () => window.open(playbackUrl(item), '_blank', 'noopener') : null} />)}
           {!visibleItems.length && !visibleFolders.length && <EmptyState title={query ? 'No matching items' : `No ${meta.title.toLowerCase()} here yet`} detail={query ? 'Try another search term.' : 'Upload something to get started. Your files will appear in the mobile apps too.'} />}
         </div>
       </>}
@@ -386,7 +431,7 @@ function App() {
     {currentUpload && uploadForm && <UploadMetadataDialog kind={section === 'music' ? 'music' : 'movie'} file={currentUpload} index={uploadIndex} total={uploadQueue.length} form={uploadForm} setForm={setUploadForm} lookupBusy={uploadLookupBusy} lookupMessage={uploadLookupMessage} uploading={busy} onCancel={cancelMediaUpload} onSubmit={submitMediaUpload} />}
     {dialog && <EditDialog kind={dialog.kind} isVideo={dialog.target?.kind === 'movie'} form={form} setForm={setForm} folders={folders} onClose={() => setDialog(null)} onSave={saveDialog} />}
     {playlistPicker && <Modal title="Add to playlist" onClose={() => setPlaylistPicker(null)}><div className="playlist-picker"><p>Add <strong>{playlistPicker.title || playlistPicker.name}</strong> to a music playlist.</p><label>Playlist<select value={playlistChoice} onChange={event => setPlaylistChoice(event.target.value)}><option value="" disabled>Select a playlist</option>{playlists.map(playlist => <option key={playlist.id} value={playlist.id}>{playlist.name}</option>)}</select></label><div className="dialog-actions"><button className="button button-light" onClick={() => setPlaylistPicker(null)}>Cancel</button><button className="button button-dark" onClick={() => void playlistAction('add-track', null, playlistPicker)}><ListMusic size={15}/>Add track</button></div></div></Modal>}
-    {settingsOpen && <Modal title="Connection settings" onClose={() => setSettingsOpen(false)}><form onSubmit={saveToken} className="settings-form"><p>Enter the same <code>API_TOKEN</code> configured for your NAS server. This token is saved only in this browser.</p><label>API token<input type="password" value={tokenDraft} onChange={event => setTokenDraft(event.target.value)} autoComplete="current-password" /></label><div className="dialog-actions"><button type="button" className="button button-light" onClick={() => setSettingsOpen(false)}>Cancel</button><button className="button button-dark">Save and reconnect</button></div></form></Modal>}
+    {settingsOpen && <Modal title="Connection settings" onClose={() => setSettingsOpen(false)}><form onSubmit={saveToken} className="settings-form"><p>Set the NAS API address and the same auth string as <code>API_TOKEN</code> in the server environment. These values are saved only in this browser.</p><label>API server URL<input type="url" placeholder="Leave blank to use this site's /api proxy" value={apiUrlDraft} onChange={event => setApiUrlDraft(event.target.value)} autoComplete="url" /></label><label>Auth string (API token)<input type="password" value={tokenDraft} onChange={event => setTokenDraft(event.target.value)} autoComplete="current-password" /></label><div className="dialog-actions"><button type="button" className="button button-light" onClick={() => setSettingsOpen(false)}>Cancel</button><button className="button button-dark">Save and reconnect</button></div></form></Modal>}
     {creditsOpen && <Modal title="About & credits" onClose={() => setCreditsOpen(false)}><div className="credits-content"><p>Movie and show metadata is provided by <a href="https://www.omdbapi.com/" target="_blank" rel="noreferrer">OMDb API</a>.</p></div></Modal>}
   </div>;
 }
@@ -428,17 +473,17 @@ function WorkspaceCard({ icon, tone, title, count, detail, onClick }) {
   return <button className="workspace-card" onClick={onClick}><span className={`workspace-icon ${tone}`}>{icon}</span><span className="workspace-copy"><strong>{title}</strong><small>{detail}</small></span><span className="workspace-count">{count}</span><ChevronRight size={16}/></button>;
 }
 
-function FolderCard({ folder, folders, items, onOpen, onEdit, onDelete }) {
+function FolderCard({ folder, folders, items, onOpen, onEdit, onDelete, draggable = false, onDragStart, onDragOver, onDragLeave, onDrop }) {
   const count = folders.filter(child => child.parent_id === folder.id).length + items.filter(item => item.folder_id === folder.id).length;
-  return <article className="asset-card folder-asset"><button className="asset-main" onClick={onOpen}><div className={`asset-preview folder-preview ${count ? 'has-files' : ''}`}><Folder size={42}/><span>{count ? `${count} items` : 'Empty folder'}</span></div><div className="asset-info"><strong title={folder.name}>{folder.name}</strong><small>{count} {count === 1 ? 'item' : 'items'}</small></div></button><CardMenu onEdit={onEdit} onDelete={onDelete} />
+  return <article className="asset-card folder-asset" draggable={draggable} onDragStart={onDragStart} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}><button className="asset-main" onClick={onOpen}><div className={`asset-preview folder-preview ${count ? 'has-files' : ''}`}><Folder size={42}/><span>{count ? `${count} items` : 'Empty folder'}</span></div><div className="asset-info"><strong title={folder.name}>{folder.name}</strong><small>{count} {count === 1 ? 'item' : 'items'}</small></div></button><CardMenu onEdit={onEdit} onDelete={onDelete} />
   </article>;
 }
 
-function MediaCard({ item, liked, onOpen, onEdit, onDelete, onFavorite, onPlaylist, playlistMode, onDownload }) {
+function MediaCard({ item, liked, onOpen, onEdit, onDelete, onFavorite, onPlaylist, playlistMode, onDownload, draggable = false, onDragStart }) {
   const kindLabel = item.kind === 'music' ? 'MUSIC' : item.kind === 'movie' ? item.media_type === 'show' ? 'TV SHOW' : 'MOVIE' : extension(item.name);
-  const artwork = item.artwork_url || (item.artwork_path ? `/api/artwork/${item.id}` : null);
+  const artwork = item.artwork_url || (item.artwork_path ? apiUrl(`/api/artwork/${item.id}`) : null);
   const ArtIcon = item.kind === 'music' ? FileAudio : item.kind === 'movie' ? FileVideo : /\.(png|jpe?g|gif|webp|heic)$/i.test(item.name) ? FileImage : File;
-  return <article className={`asset-card ${item.kind}-asset`}><button className="asset-main" onClick={onOpen}>
+  return <article className={`asset-card ${item.kind}-asset`} draggable={draggable} onDragStart={onDragStart}><button className="asset-main" onClick={onOpen}>
     <div className={`asset-preview ${item.kind}`}>
       {artwork && item.kind !== 'file' ? <img src={`${artwork}${artwork.includes('?') ? '&' : '?'}token=${encodeURIComponent(getToken())}`} alt="" loading="lazy" onError={event => { event.currentTarget.style.display = 'none'; }} /> : null}
       <ArtIcon size={37}/><span>{kindLabel}</span>

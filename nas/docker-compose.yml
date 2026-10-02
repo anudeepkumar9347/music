@@ -41,7 +41,11 @@ services:
   #     - web
 
   web:
-    build: ../apps/web
+    build:
+      context: ../apps/web
+      args:
+        VITE_API_URL: ${VITE_API_URL:-}
+        VITE_API_TOKEN: ${API_TOKEN:-orbit-local-dev-token}
     depends_on:
       - api
     ports:

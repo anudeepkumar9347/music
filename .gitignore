@@ -1,5 +1,6 @@
 data/
 nas/.env
+apps/web/.env
 **/node_modules/
 **/.expo/
 **/dist/

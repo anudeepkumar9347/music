@@ -36,7 +36,14 @@ export function VideoPlayerModal({ item, source, onClose }: VideoPlayerModalProp
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [playerError, setPlayerError] = useState('');
   const lastVolume = useRef(1);
-  const supportsPiP = isPictureInPictureSupported();
+  const [supportsPiP] = useState(() => {
+    try {
+      return isPictureInPictureSupported();
+    } catch {
+      // PiP capability checks can fail when the native activity is unavailable.
+      return false;
+    }
+  });
 
   useEffect(() => {
     const playingSubscription = player.addListener('playingChange', (event) => setPlaying(event.isPlaying));

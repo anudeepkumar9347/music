@@ -1,5 +1,9 @@
 FROM node:22-alpine AS build
 WORKDIR /app
+ARG VITE_API_URL=
+ENV VITE_API_URL=${VITE_API_URL}
+ARG VITE_API_TOKEN=orbit-local-dev-token
+ENV VITE_API_TOKEN=${VITE_API_TOKEN}
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY . .
