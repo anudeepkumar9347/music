@@ -19,7 +19,6 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
-import * as SecureStore from 'expo-secure-store';
 import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from 'expo-audio';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
@@ -225,7 +224,7 @@ function MainApp() {
 
       // 2. Read saved API URL
       let targetUrl = MUSIC_API_URL;
-      const savedConfig = await SecureStore.getItemAsync(STORAGE_KEYS.config);
+      const savedConfig = await AsyncStorage.getItem(STORAGE_KEYS.config);
       if (savedConfig) {
         try {
           const parsed = JSON.parse(savedConfig) as ApiConfig;
@@ -282,7 +281,7 @@ function MainApp() {
         setQueue(serverTracks);
       }
 
-      await SecureStore.setItemAsync(
+      await AsyncStorage.setItem(
         STORAGE_KEYS.config,
         JSON.stringify({ url: trimmed })
       );
@@ -318,6 +317,9 @@ function MainApp() {
         Alert.alert('Cannot Play Track', 'No audio stream available.');
         return;
       }
+      // Stop the old web audio element first. Expo's web player otherwise
+      // resumes automatically during replace() when the previous track was playing.
+      player.pause();
       player.replace({ uri: stream, name: track.title });
       player.play();
       setHasStartedPlayback(true);
@@ -1654,7 +1656,7 @@ function MainApp() {
             <TouchableOpacity
               style={styles.disconnectButton}
               onPress={async () => {
-                await SecureStore.deleteItemAsync(STORAGE_KEYS.config);
+                await AsyncStorage.removeItem(STORAGE_KEYS.config);
                 setClient(null);
                 setIsConnected(false);
                 setTracks([]);

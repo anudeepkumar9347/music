@@ -2,6 +2,8 @@
 
 The NAS runs as two small Docker services: a FastAPI and SQLite API, and a static React web app served by Nginx. Media and the database stay in the repository-level `data/` directory on the laptop.
 
+The API source and Docker build files are together in `nas/api/`; run the local server from that directory so Python can import its `app` package.
+
 ## Start
 
 From this directory, start the services with the local development token:
@@ -15,6 +17,16 @@ The single build job keeps the initial build gentler on lower-memory laptops. Af
 
 For a custom token, copy `.env.example` to `.env` and set `API_TOKEN` before starting. Use the same token in the mobile `.env` files and the web app's Connection Settings.
 
+## Run the API without Docker
+
+From the repository root, install the Python requirements and start Uvicorn. The API loads `nas/.env` from the repository automatically.
+
+```sh
+cd nas/api
+python -m pip install -r requirements.txt
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
 - Web app: `http://<laptop-lan-ip>:4173`
 - API: `http://<laptop-lan-ip>:8000`
 - API docs: `http://<laptop-lan-ip>:8000/docs`
@@ -27,7 +39,7 @@ Music and Movies uploads open a metadata review form before the file is sent to 
 
 It searches MusicBrainz for audio metadata and Cover Art Archive for album art without requiring credentials. Optional AcoustID fingerprint matching improves recognition when a track has weak or missing tags; register an AcoustID application and set `ACOUSTID_APP_KEY` in `.env`.
 
-Without a key, movie uploads use Apple's public iTunes Search API as a no-sign-in fallback; its catalog and metadata are more limited, especially for TV. For higher-quality movie/show matches, posters, synopsis, genres, language, and release dates, set `TMDB_API_KEY` in `.env`. Create it in a TMDB account's API settings. The key stays in Docker's server environment, not in the clients. TMDB's developer API is free for non-commercial use with attribution. Its API terms cap cached content at six months, so the service refreshes TMDB-backed records and posters before then; use locally generated video frames for artwork you need to retain as a permanent archive. See the repository README for the provider overview.
+Movie and TV uploads use OMDb for title matching, posters, plot, genre, language, and release date. Get an API key from <https://www.omdbapi.com/apikey.aspx> and set `OMDB_API_KEY` in `nas/.env`. If the key is empty or OMDb has no match, the server falls back to Apple's public iTunes Search API. Music lookups continue to use MusicBrainz; `ACOUSTID_APP_KEY` is an optional key for audio fingerprint matching.
 
 The selected metadata is stored in SQLite, and downloaded artwork is stored under `../data/artwork/`. The web and mobile clients read those assets from the NAS API, so they share one catalog and do not independently contact metadata providers.
 

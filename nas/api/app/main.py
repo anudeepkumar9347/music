@@ -14,10 +14,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from difflib import SequenceMatcher
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -27,12 +28,36 @@ try:
 except ImportError:
     Image = None
 
-MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", "./data/media"))
-DB_PATH = Path(os.getenv("DB_PATH", "./data/nas.db"))
+API_ROOT = Path(__file__).resolve().parents[1]
+REPOSITORY_ROOT = API_ROOT.parent.parent
+PROJECT_ROOT = REPOSITORY_ROOT if (REPOSITORY_ROOT / "nas").is_dir() else API_ROOT
+load_dotenv(PROJECT_ROOT / "nas" / ".env", override=False)
+default_data_root = "/data" if PROJECT_ROOT == API_ROOT else str(PROJECT_ROOT / "data")
+DATA_ROOT = Path(os.getenv("DATA_ROOT", default_data_root)).expanduser()
+if not DATA_ROOT.is_absolute():
+    DATA_ROOT = PROJECT_ROOT / DATA_ROOT
+MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", str(DATA_ROOT / "media"))).expanduser()
+DB_PATH = Path(os.getenv("DB_PATH", str(DATA_ROOT / "nas.db"))).expanduser()
+if not MEDIA_ROOT.is_absolute():
+    MEDIA_ROOT = PROJECT_ROOT / MEDIA_ROOT
+if not DB_PATH.is_absolute():
+    DB_PATH = PROJECT_ROOT / DB_PATH
 IMPORT_ROOT = MEDIA_ROOT.parent / "import"
 ARTWORK_ROOT = MEDIA_ROOT.parent / "artwork"
 API_TOKEN = os.getenv("API_TOKEN", "orbit-local-dev-token")
-TMDB_API_KEY = os.getenv("TMDB_API_KEY", "").strip()
+def normalize_omdb_key(value: str) -> str:
+    configured = value.strip()
+    if configured.lower().startswith(("http://", "https://")):
+        parsed = urllib.parse.urlparse(configured)
+        if parsed.hostname not in {"omdbapi.com", "www.omdbapi.com"}:
+            return ""
+        return urllib.parse.parse_qs(parsed.query).get("apikey", [""])[0].strip()
+    if configured.lower().startswith("apikey="):
+        configured = configured.split("=", 1)[1]
+    return configured.strip()
+
+
+OMDB_API_KEY = normalize_omdb_key(os.getenv("OMDB_API_KEY", ""))
 ACOUSTID_APP_KEY = os.getenv("ACOUSTID_APP_KEY", "").strip()
 ITUNES_COUNTRY = os.getenv("ITUNES_COUNTRY", "IN").strip().upper()
 METADATA_USER_AGENT = os.getenv("METADATA_USER_AGENT", "OrbitNAS/0.1 (https://github.com/anudeepkumar9347/nas)")
@@ -41,7 +66,6 @@ RATE_WINDOW_SECONDS = 60
 RATE_LIMIT = 120
 REQUESTS: dict[str, list[float]] = {}
 MUSICBRAINZ_LAST_REQUEST = 0.0
-TMDB_GENRES: dict[str, dict[int, str]] = {}
 MUSICBRAINZ_LOCK = threading.Lock()
 ITUNES_LOCK = threading.Lock()
 ITUNES_LAST_REQUEST = 0.0
@@ -51,7 +75,7 @@ ARTWORK_ROOT.mkdir(parents=True, exist_ok=True)
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="Orbit Media API", version="0.1.0")
-origins = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:8081").split(",")
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["*"], allow_headers=["*"], allow_credentials=True)
 
 
@@ -236,10 +260,12 @@ def musicbrainz_json(path: str, query: dict[str, str]) -> dict[str, Any] | None:
 
 def clean_media_title(path: Path) -> tuple[str, str | None, str | None]:
     stem = path.stem.replace(".", " ").replace("_", " ")
-    year_match = re.search(r"\b(19\d{2}|20\d{2})\b", stem)
+    year_matches = list(re.finditer(r"\b(19\d{2}|20\d{2})\b", stem))
+    year_match = year_matches[-1] if year_matches else None
     year = year_match.group(1) if year_match else None
     is_show = bool(re.search(r"\bS\d{1,2}\s*E\d{1,2}\b|\bSeason\s*\d+\b", stem, re.I))
-    stem = re.sub(r"\b(19\d{2}|20\d{2})\b", " ", stem)
+    if year_match:
+        stem = stem[:year_match.start()] + " " + stem[year_match.end():]
     stem = re.sub(r"\b(2160p|1080p|720p|480p|4k|8k|hdr10?|dv|uhd|bluray|blu ray|brrip|bdrip|web[- ]?dl|web[- ]?rip|hdtv|dvdrip|x26[45]|h26[45]|hevc|av1|aac\d*|dts|proper|repack|limited)\b", " ", stem, flags=re.I)
     stem = re.sub(r"\bS\d{1,2}\s*E\d{1,2}\b|\bSeason\s*\d+\b|\bEpisode\s*\d+\b", " ", stem, flags=re.I)
     stem = re.sub(r"\[[^]]*\]|\([^)]*\)", " ", stem)
@@ -342,60 +368,51 @@ def music_metadata_lookup(path: Path, metadata: dict[str, str | None], *, force_
     return result
 
 
-def tmdb_request(path: str, params: dict[str, str]) -> dict[str, Any] | None:
-    query = dict(params)
-    headers = {"User-Agent": METADATA_USER_AGENT}
-    if TMDB_API_KEY.startswith("eyJ"):
-        headers["Authorization"] = f"Bearer {TMDB_API_KEY}"
-    else:
-        query["api_key"] = TMDB_API_KEY
-    return request_json(f"https://api.themoviedb.org/3/{path}?{urllib.parse.urlencode(query)}", headers=headers, timeout=10)
+def omdb_request(params: dict[str, str]) -> dict[str, Any] | None:
+    if not OMDB_API_KEY:
+        return None
+    query = {"apikey": OMDB_API_KEY, "r": "json", **params}
+    response = request_json(f"https://www.omdbapi.com/?{urllib.parse.urlencode(query)}", timeout=10)
+    return response if response and response.get("Response") == "True" else None
 
 
-def tmdb_movie_metadata_lookup(path: Path) -> dict[str, str | None]:
+def omdb_movie_metadata_lookup(path: Path) -> dict[str, str | None]:
     title, year, detected_type = clean_media_title(path)
-    media_type = detected_type or "movie"
-    endpoint = "search/tv" if media_type == "show" else "search/movie"
-    response = tmdb_request(endpoint, {"query": title, "include_adult": "false", "language": "en-US", **({"year": year} if year and media_type == "movie" else {})})
-    results = response.get("results", []) if response else []
-    wanted = normalized_text(title)
-    scored: list[tuple[float, dict[str, Any]]] = []
-    for item in results:
-        candidate_title = item.get("name") if media_type == "show" else item.get("title")
-        score = SequenceMatcher(None, wanted, normalized_text(candidate_title)).ratio()
-        date = str(item.get("first_air_date") or item.get("release_date") or "")
-        if year and date.startswith(year):
-            score = min(1.0, score + 0.08)
-        scored.append((score, item))
-    if not scored:
+    query = {
+        "t": title,
+        "type": "series" if detected_type == "show" else "movie",
+        "plot": "full",
+    }
+    if year:
+        query["y"] = year
+    candidate = omdb_request(query)
+    if not candidate:
         return {}
-    score, candidate = max(scored, key=lambda row: row[0])
-    if score < 0.82:
-        return {}
-    item_id = candidate.get("id")
-    detail = tmdb_request(f"{media_type}/{item_id}", {"language": "en-US"}) if item_id else None
-    if detail:
-        candidate = detail
-    genre_ids = candidate.get("genre_ids") or [genre.get("id") for genre in candidate.get("genres", [])]
-    if media_type not in TMDB_GENRES:
-        genre_result = tmdb_request(f"genre/{media_type}/list", {"language": "en-US"})
-        TMDB_GENRES[media_type] = {genre["id"]: genre["name"] for genre in (genre_result or {}).get("genres", [])}
-    genre_names = [TMDB_GENRES[media_type].get(genre_id) for genre_id in genre_ids]
-    release_date = candidate.get("first_air_date") or candidate.get("release_date")
-    original_language = candidate.get("original_language")
-    spoken_languages = candidate.get("spoken_languages") or []
-    language = next((item.get("english_name") or item.get("name") for item in spoken_languages if item.get("iso_639_1") == original_language), original_language)
-    poster = candidate.get("poster_path")
+    imdb_id = candidate.get("imdbID")
+    media_type = "show" if candidate.get("Type") == "series" else "movie"
+    released = str(candidate.get("Released") or "")
+    try:
+        release_date = datetime.strptime(released, "%d %b %Y").date().isoformat()
+    except ValueError:
+        matched_year = re.search(r"\b(19\d{2}|20\d{2})\b", str(candidate.get("Year") or ""))
+        release_date = matched_year.group(1) if matched_year else None
+    poster = candidate.get("Poster")
+    if poster == "N/A":
+        poster = None
+    def omdb_value(field: str) -> str | None:
+        value = candidate.get(field)
+        return str(value) if value and value != "N/A" else None
+
     return {
-        "title": candidate.get("name") if media_type == "show" else candidate.get("title"),
-        "language": language,
-        "genre": ", ".join(name for name in genre_names if name) or None,
-        "description": candidate.get("overview"),
+        "title": omdb_value("Title"),
+        "language": omdb_value("Language"),
+        "genre": omdb_value("Genre"),
+        "description": omdb_value("Plot"),
         "release_date": release_date,
         "media_type": media_type,
-        "external_id": f"tmdb:{media_type}:{item_id}",
-        "metadata_provider": "tmdb",
-        "_artwork_url": f"https://image.tmdb.org/t/p/w780{poster}" if poster else None,
+        "external_id": f"omdb:{imdb_id}" if imdb_id else None,
+        "metadata_provider": "omdb",
+        "_artwork_url": poster,
     }
 
 
@@ -443,8 +460,8 @@ def itunes_movie_metadata_lookup(path: Path) -> dict[str, str | None]:
 
 
 def movie_metadata_lookup(path: Path) -> dict[str, str | None]:
-    if TMDB_API_KEY:
-        match = tmdb_movie_metadata_lookup(path)
+    if OMDB_API_KEY:
+        match = omdb_movie_metadata_lookup(path)
         if match:
             return match
     return itunes_movie_metadata_lookup(path)
@@ -475,7 +492,7 @@ def persist_artwork(url: str | None, checksum: str | None) -> tuple[str | None, 
         return None, None
     parsed = urllib.parse.urlparse(url)
     host = (parsed.hostname or "").lower()
-    trusted_host = host in {"coverartarchive.org", "image.tmdb.org", "archive.org"} or host.endswith(".mzstatic.com")
+    trusted_host = host in {"coverartarchive.org", "m.media-amazon.com", "images-na.ssl-images-amazon.com", "archive.org"} or host.endswith(".mzstatic.com")
     if parsed.scheme not in {"http", "https"} or not trusted_host:
         return None, None
     secure_url = parsed._replace(scheme="https").geturl()
@@ -509,41 +526,6 @@ def enrich_media(path: Path, kind: str, metadata: dict[str, str | None]) -> dict
             metadata["artwork_path"] = artwork_path
             metadata["dominant_color"] = dominant_color
     return metadata
-
-
-def refresh_expired_tmdb_metadata() -> None:
-    if not TMDB_API_KEY:
-        return
-    refresh_before = (datetime.now(timezone.utc) - timedelta(days=170)).isoformat()
-    with connection() as db:
-        rows = db.execute("SELECT id, path, checksum FROM media WHERE kind = 'movie' AND ((metadata_provider IS NULL AND (metadata_checked_at IS NULL OR metadata_checked_at < ?)) OR (metadata_provider = 'tmdb' AND (metadata_checked_at IS NULL OR metadata_checked_at < ?))) ORDER BY id", (refresh_before, refresh_before)).fetchall()
-    for row in rows:
-        path = (MEDIA_ROOT / row["path"]).resolve()
-        if MEDIA_ROOT.resolve() not in path.parents or not path.is_file():
-            continue
-        try:
-            metadata = movie_metadata_lookup(path)
-            artwork_path, dominant_color = persist_artwork(metadata.pop("_artwork_url", None), row["checksum"])
-            metadata["metadata_checked_at"] = datetime.now(timezone.utc).isoformat()
-            if artwork_path:
-                metadata["artwork_path"] = artwork_path
-                metadata["dominant_color"] = dominant_color
-            changes = {key: value for key, value in metadata.items() if value is not None and key in {"title", "language", "genre", "description", "release_date", "media_type", "external_id", "metadata_provider", "metadata_checked_at", "artwork_path", "dominant_color"}}
-            with connection() as db:
-                db.execute(f"UPDATE media SET {', '.join(f'{key} = ?' for key in changes)} WHERE id = ?", (*changes.values(), row["id"]))
-                db.commit()
-        except (OSError, sqlite3.Error):
-            continue
-        time.sleep(0.2)
-
-
-def tmdb_metadata_maintenance() -> None:
-    while True:
-        try:
-            refresh_expired_tmdb_metadata()
-        except Exception:
-            pass
-        time.sleep(24 * 60 * 60)
 
 
 def folder_path(db: sqlite3.Connection, folder_id: int | None) -> Path:
@@ -596,7 +578,6 @@ def scan_library(*, enrich_external: bool = True) -> int:
 def startup() -> None:
     initialise()
     scan_library()
-    threading.Thread(target=tmdb_metadata_maintenance, name="tmdb-metadata-refresh", daemon=True).start()
 
 
 @app.get("/health")
@@ -972,7 +953,7 @@ def upload(
                 if media_type in {"movie", "show"} and media_kind(Path(safe_name)) == "movie":
                     changes["media_type"] = media_type
                 changes["metadata_provider"] = metadata_provider.strip() if metadata_provider and metadata_provider.strip() else "manual"
-                if changes["metadata_provider"] == "tmdb":
+                if provider_match:
                     changes["metadata_checked_at"] = datetime.now(timezone.utc).isoformat()
                 artwork_bytes = artwork.file.read(15 * 1024 * 1024 + 1) if artwork else b""
                 if artwork_bytes:

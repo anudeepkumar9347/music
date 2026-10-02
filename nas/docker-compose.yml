@@ -1,15 +1,16 @@
 services:
   api:
-    build: ./services/api
+    build: ./api
     environment:
+      DATA_ROOT: /data
       MEDIA_ROOT: /data/media
       DB_PATH: /data/nas.db
       API_TOKEN: ${API_TOKEN:-orbit-local-dev-token}
-      TMDB_API_KEY: ${TMDB_API_KEY:-}
+      OMDB_API_KEY: ${OMDB_API_KEY:-}
       ACOUSTID_APP_KEY: ${ACOUSTID_APP_KEY:-}
       ITUNES_COUNTRY: ${ITUNES_COUNTRY:-IN}
       METADATA_USER_AGENT: ${METADATA_USER_AGENT:-OrbitNAS/0.1 (https://github.com/anudeepkumar9347/nas)}
-      CORS_ORIGINS: http://localhost:4173,http://localhost:5173
+      CORS_ORIGINS: http://localhost:4173,http://localhost:5173,http://localhost:8081
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-21474836480}
     ports:
       - "8000:8000"

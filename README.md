@@ -20,9 +20,9 @@ The Docker build uses one build job to reduce peak resource use on an 8 GB machi
 
 Uploads are inspected by FFprobe. Music uploads are matched against MusicBrainz and album covers are fetched from the Cover Art Archive; these lookups do not need an account or API key. The backend saves the chosen metadata in SQLite and artwork under `data/artwork/`, then all apps receive it through the shared library API. Optional audio fingerprint recognition uses AcoustID and Chromaprint; set `ACOUSTID_APP_KEY` in `nas/.env` after registering an AcoustID application for better matches when filenames or embedded tags are poor.
 
-Without a key, movie uploads fall back to Apple's public iTunes Search API for matching catalog entries and artwork. It needs no sign-in but has a narrower catalog and less metadata, especially for TV. For better movie/show matching, posters, synopsis, genre, original language, and release dates, use TMDB. TMDB requires an API key created from a TMDB account; clients do not need TMDB accounts. Put `TMDB_API_KEY` in `nas/.env`. Its developer API is free for non-commercial personal use with attribution. TMDB limits cached API content to six months, so the API refreshes TMDB metadata and posters before that window; those provider assets cannot be promised as permanent archives. Local video frame artwork and your media files remain in `data/`. The web and mobile Movies apps include TMDB attribution.
+Movie uploads use OMDb for movie and TV metadata, including posters, plot, genre, language, and release date. Create an OMDb API key at <https://www.omdbapi.com/apikey.aspx> and set `OMDB_API_KEY` in `nas/.env`. If no OMDb key is configured or OMDb has no match, the server falls back to Apple's public iTunes Search API. The web and mobile Movies apps credit OMDb. Local video frame artwork and your media files remain in `data/`.
 
-Copy `nas/.env.example` to `nas/.env` to see the optional provider settings. Keep those keys on the server and out of the mobile apps.
+Copy `nas/.env.example` to `nas/.env` to see the server settings. Keep provider keys on the server and out of the mobile apps. The API loads `nas/.env` for local runs; Docker Compose reads the same file automatically.
 
 ## Web workspaces
 

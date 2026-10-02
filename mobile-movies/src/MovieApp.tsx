@@ -559,8 +559,8 @@ function MainApp() {
           {scrollContent}
           {!selectedMedia ? (
             <View style={styles.creditsBox}>
-              <View style={styles.tmdbBadge}><Text style={styles.tmdbBadgeText}>TMDB</Text></View>
-              <Text style={styles.creditsText}>This product uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.</Text>
+              <View style={styles.omdbBadge}><Text style={styles.omdbBadgeText}>OMDb</Text></View>
+              <Text style={styles.creditsText}>Movie and show metadata is provided by OMDb API.</Text>
             </View>
           ) : null}
         </ScrollView>
@@ -663,8 +663,8 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   content: { paddingHorizontal: 20, paddingTop: 8 },
   creditsBox: { marginTop: 24, paddingTop: 16, paddingBottom: 8, borderTopWidth: 1, borderTopColor: colors.divider, alignItems: 'flex-start' },
-  tmdbBadge: { minWidth: 58, height: 27, alignItems: 'center', justifyContent: 'center', marginBottom: 8, paddingHorizontal: 7, borderRadius: 4, backgroundColor: '#0d253f' },
-  tmdbBadgeText: { color: '#01b4e4', fontSize: 14, fontWeight: '900', letterSpacing: -0.5 },
+  omdbBadge: { minWidth: 58, height: 27, alignItems: 'center', justifyContent: 'center', marginBottom: 8, paddingHorizontal: 7, borderRadius: 4, backgroundColor: '#0d253f' },
+  omdbBadgeText: { color: '#f5c518', fontSize: 14, fontWeight: '900', letterSpacing: -0.5 },
   creditsText: { maxWidth: 300, color: colors.textMuted, fontSize: 10, lineHeight: 15 },
   topBar: {
     minHeight: 72,
