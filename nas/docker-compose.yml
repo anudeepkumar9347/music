@@ -1,0 +1,61 @@
+services:
+  api:
+    build: ./services/api
+    environment:
+      MEDIA_ROOT: /data/media
+      DB_PATH: /data/nas.db
+      API_TOKEN: ${API_TOKEN:-orbit-local-dev-token}
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
+      ACOUSTID_APP_KEY: ${ACOUSTID_APP_KEY:-}
+      ITUNES_COUNTRY: ${ITUNES_COUNTRY:-IN}
+      METADATA_USER_AGENT: ${METADATA_USER_AGENT:-OrbitNAS/0.1 (https://github.com/anudeepkumar9347/nas)}
+      CORS_ORIGINS: http://localhost:4173,http://localhost:5173
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-21474836480}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    volumes:
+      - ../data:/data
+    restart: unless-stopped
+
+  # Enable after placing a real hostname in Caddyfile and DNS pointing to this laptop.
+  # caddy:
+  #   image: caddy:2-alpine
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./Caddyfile:/etc/caddy/Caddyfile:ro
+  #     - caddy_data:/data
+  #   depends_on:
+  #     - web
+
+  web:
+    build: ../apps/web
+    depends_on:
+      - api
+    ports:
+      - "4173:80"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    restart: unless-stopped
+
+volumes:
+  caddy_data:

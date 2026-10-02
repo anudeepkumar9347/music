@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "Mobile Movies",
+    "slug": "mobile-movies",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-video",
+        {
+          "supportsPictureInPicture": true
+        }
+      ]
+    ]
+  }
+}

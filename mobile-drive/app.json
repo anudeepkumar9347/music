@@ -1,0 +1,14 @@
+{
+  "name": "Mobile Drive",
+  "slug": "mobile-drive",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "userInterfaceStyle": "light",
+  "ios": {
+    "supportsTablet": true
+  },
+  "plugins": [
+    "expo-sharing",
+    "expo-document-picker"
+  ]
+}
