@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "Sonora",
+    "slug": "sonora-nas-player",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/apple_music_icon.png",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sonora.nasplayer"
+    },
+    "android": {
+      "package": "com.sonora.nasplayer",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/apple_music_icon.png",
+        "backgroundColor": "#08080B"
+      }
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/apple_music_icon.png",
+          "imageWidth": 116,
+          "resizeMode": "contain",
+          "backgroundColor": "#08080B",
+          "dark": {
+            "image": "./assets/apple_music_icon.png",
+            "backgroundColor": "#08080B"
+          }
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "enableBackgroundPlayback": true
+        }
+      ],
+      "expo-secure-store",
+      "expo-status-bar",
+      "expo-font",
+      "expo-asset"
+    ]
+  }
+}
