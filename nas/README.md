@@ -54,6 +54,6 @@ docker compose logs -f api
 docker compose down
 ```
 
-The API indexes uploads into SQLite and serves file bytes directly from disk. SQLite keeps the idle resource footprint low for a single-user home NAS. Keep regular copies of `data/` on another disk; a database backup alone does not protect the media files.
+The API indexes uploads and files already present under `data/media/` into SQLite, then serves file bytes directly from disk. SQLite keeps the idle resource footprint low for a single-user home NAS. Keep regular copies of `data/` on another disk; a database backup alone does not protect the media files.
 
 Before remote access, use a private VPN or HTTPS reverse proxy and keep a strong `API_TOKEN`. The example development token is only for trusted local testing.

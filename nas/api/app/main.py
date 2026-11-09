@@ -572,6 +572,23 @@ def scan_library(*, enrich_external: bool = True) -> int:
                     folder_ids[folder_parts] = cursor.lastrowid
             return folder_ids.get(parts)
 
+        def index_file(target: Path, relative: Path) -> None:
+            nonlocal found
+            metadata = media_metadata(target)
+            kind = media_kind(target)
+            if enrich_external:
+                metadata = enrich_media(target, kind, metadata)
+            try:
+                duration = max(0.0, float(metadata["duration"] or 0))
+            except (TypeError, ValueError):
+                duration = 0.0
+            folder = ensure_folder_path(relative.parent.parts)
+            media_type = "movie" if kind == "movie" else kind
+            if kind == "movie" and metadata.get("media_type") in {"movie", "show"}:
+                media_type = str(metadata["media_type"])
+            db.execute("INSERT OR REPLACE INTO media(name, path, kind, size, mime, title, artist, album, artwork_path, dominant_color, checksum, folder_id, media_type, duration, language, genre, description, release_date, external_id, metadata_provider, metadata_checked_at, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (target.name, relative.as_posix(), kind, target.stat().st_size, mimetypes.guess_type(target.name)[0], metadata["title"], metadata["artist"], metadata["album"], metadata["artwork_path"], metadata["dominant_color"], metadata["checksum"], folder, media_type, duration, metadata["language"], metadata["genre"], metadata["description"], metadata["release_date"], metadata["external_id"], metadata["metadata_provider"], metadata.get("metadata_checked_at"), datetime.now(timezone.utc).isoformat()))
+            found += 1
+
         directories = sorted(
             (path for path in IMPORT_ROOT.rglob("*") if path.is_dir()),
             key=lambda path: len(path.relative_to(IMPORT_ROOT).parts),
@@ -580,6 +597,7 @@ def scan_library(*, enrich_external: bool = True) -> int:
             ensure_folder_path(directory.relative_to(IMPORT_ROOT).parts)
         media_rows = db.execute("SELECT id, path, folder_id FROM media").fetchall()
         media_root = MEDIA_ROOT.resolve()
+        indexed_paths = {Path(row["path"]).as_posix() for row in media_rows}
         for row in media_rows:
             relative = Path(row["path"])
             if relative.is_absolute() or ".." in relative.parts:
@@ -597,21 +615,19 @@ def scan_library(*, enrich_external: bool = True) -> int:
             target = MEDIA_ROOT / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(source), str(target))
-            metadata = media_metadata(target)
-            kind = media_kind(target)
-            if enrich_external:
-                metadata = enrich_media(target, kind, metadata)
-            checksum = metadata["checksum"]
-            try:
-                duration = max(0.0, float(metadata["duration"] or 0))
-            except (TypeError, ValueError):
-                duration = 0.0
-            folder = ensure_folder_path(relative.parent.parts)
-            media_type = "movie" if kind == "movie" else kind
-            if kind == "movie" and metadata.get("media_type") in {"movie", "show"}:
-                media_type = str(metadata["media_type"])
-            db.execute("INSERT OR REPLACE INTO media(name, path, kind, size, mime, title, artist, album, artwork_path, dominant_color, checksum, folder_id, media_type, duration, language, genre, description, release_date, external_id, metadata_provider, metadata_checked_at, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (target.name, str(target.relative_to(MEDIA_ROOT)), kind, target.stat().st_size, mimetypes.guess_type(target.name)[0], metadata["title"], metadata["artist"], metadata["album"], metadata["artwork_path"], metadata["dominant_color"], checksum, folder if folder else None, media_type, duration, metadata["language"], metadata["genre"], metadata["description"], metadata["release_date"], metadata["external_id"], metadata["metadata_provider"], metadata.get("metadata_checked_at"), datetime.now(timezone.utc).isoformat()))
-            found += 1
+            index_file(target, relative)
+            indexed_paths.add(relative.as_posix())
+        for target in MEDIA_ROOT.rglob("*"):
+            if not target.is_file():
+                continue
+            resolved = target.resolve()
+            if media_root not in resolved.parents:
+                continue
+            relative = target.relative_to(MEDIA_ROOT)
+            if relative.as_posix() in indexed_paths:
+                continue
+            index_file(target, relative)
+            indexed_paths.add(relative.as_posix())
         db.commit()
     return found
 
