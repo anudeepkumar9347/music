@@ -54,11 +54,11 @@ export class DriveApi {
     return response.json() as Promise<T>;
   }
 
-  library() { return this.request<DriveMedia[]>('/api/library'); }
+  library() { return this.request<DriveMedia[]>('/api/library?kind=file'); }
   folders() { return this.request<DriveFolder[]>('/api/folders'); }
-  favorites() { return this.request<DriveMedia[]>('/api/favorites'); }
+  async favorites() { return (await this.request<DriveMedia[]>('/api/favorites')).filter((item) => item.kind === 'file'); }
   stats() { return this.request<DriveStats>('/api/stats'); }
-  search(query: string) { return this.request<DriveMedia[]>(`/api/search?q=${encodeURIComponent(query)}`); }
+  async search(query: string) { return (await this.request<DriveMedia[]>(`/api/search?q=${encodeURIComponent(query)}`)).filter((item) => item.kind === 'file'); }
   streamUrl(item: DriveMedia) { return `${API_URL}/api/media/${item.id}?token=${encodeURIComponent(API_TOKEN)}`; }
 
   createFolder(name: string, parentId: number | null) {

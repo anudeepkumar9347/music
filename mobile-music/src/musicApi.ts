@@ -140,9 +140,17 @@ export class MusicApi {
   private toTrack(item: NasMedia): Track {
     const artist = item.artist || 'Unknown artist';
     const album = item.album || 'Unknown album';
+    const fileName = item.name.replace(/\\/g, '/').split('/').pop() || item.name;
+    const fallbackTitle = fileName.replace(/\.[^.]+$/, '');
+    const metadataTitle = item.title?.trim();
+    const titleLooksLikePath =
+      metadataTitle &&
+      (metadataTitle.toLowerCase().includes('siteuploads') ||
+        /^https?:\/\//i.test(metadataTitle) ||
+        /[\\/].+\.(?:aac|flac|m4a|mp3|ogg|opus|wav|webm|jpg|jpeg|png|webp)$/i.test(metadataTitle));
     return {
       id: String(item.id),
-      title: item.title || item.name.replace(/\.[^.]+$/, ''),
+      title: titleLooksLikePath ? fallbackTitle : metadataTitle || fallbackTitle,
       artist,
       album,
       albumId: this.albumKey(artist, album),

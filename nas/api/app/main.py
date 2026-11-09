@@ -547,7 +547,49 @@ def folder_path(db: sqlite3.Connection, folder_id: int | None) -> Path:
 def scan_library(*, enrich_external: bool = True) -> int:
     found = 0
     with connection() as db:
-        folder_paths = [(row["id"], folder_path(db, row["id"])) for row in db.execute("SELECT id FROM folders").fetchall()]
+        folder_ids = {
+            tuple(folder_path(db, row["id"]).parts): row["id"]
+            for row in db.execute("SELECT id FROM folders").fetchall()
+        }
+
+        def ensure_folder_path(parts: tuple[str, ...]) -> int | None:
+            for depth in range(1, len(parts) + 1):
+                folder_parts = parts[:depth]
+                if folder_parts in folder_ids:
+                    continue
+                parent_id = folder_ids.get(folder_parts[:-1])
+                row = db.execute(
+                    "SELECT id FROM folders WHERE parent_id IS ? AND name = ?",
+                    (parent_id, folder_parts[-1]),
+                ).fetchone()
+                if row:
+                    folder_ids[folder_parts] = row["id"]
+                else:
+                    cursor = db.execute(
+                        "INSERT INTO folders(name, parent_id, created_at) VALUES(?, ?, ?)",
+                        (folder_parts[-1], parent_id, datetime.now(timezone.utc).isoformat()),
+                    )
+                    folder_ids[folder_parts] = cursor.lastrowid
+            return folder_ids.get(parts)
+
+        directories = sorted(
+            (path for path in IMPORT_ROOT.rglob("*") if path.is_dir()),
+            key=lambda path: len(path.relative_to(IMPORT_ROOT).parts),
+        )
+        for directory in directories:
+            ensure_folder_path(directory.relative_to(IMPORT_ROOT).parts)
+        media_rows = db.execute("SELECT id, path, folder_id FROM media").fetchall()
+        media_root = MEDIA_ROOT.resolve()
+        for row in media_rows:
+            relative = Path(row["path"])
+            if relative.is_absolute() or ".." in relative.parts:
+                continue
+            source = (MEDIA_ROOT / relative).resolve()
+            if media_root not in source.parents or not source.is_file():
+                continue
+            folder_id = ensure_folder_path(relative.parent.parts)
+            if folder_id != row["folder_id"]:
+                db.execute("UPDATE media SET folder_id = ? WHERE id = ?", (folder_id, row["id"]))
         for source in IMPORT_ROOT.rglob("*"):
             if not source.is_file():
                 continue
@@ -564,7 +606,7 @@ def scan_library(*, enrich_external: bool = True) -> int:
                 duration = max(0.0, float(metadata["duration"] or 0))
             except (TypeError, ValueError):
                 duration = 0.0
-            folder = next((folder_id for folder_id, path in sorted(folder_paths, key=lambda item: len(item[1].parts), reverse=True) if relative.parent == path or str(relative.parent).startswith(f"{path}/")), None)
+            folder = ensure_folder_path(relative.parent.parts)
             media_type = "movie" if kind == "movie" else kind
             if kind == "movie" and metadata.get("media_type") in {"movie", "show"}:
                 media_type = str(metadata["media_type"])

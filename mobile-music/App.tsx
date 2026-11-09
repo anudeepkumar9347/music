@@ -205,6 +205,12 @@ function MainApp() {
     }
   }, [playback.didJustFinish]);
 
+  useEffect(() => {
+    if (playback.error) {
+      Alert.alert('Playback Error', playback.error);
+    }
+  }, [playback.error]);
+
   // ============================================================
   // INITIALIZATION
   // ============================================================
@@ -340,6 +346,16 @@ function MainApp() {
         'Playback Error',
         err instanceof Error ? err.message : 'Could not play audio track.'
       );
+    }
+  }
+
+  function togglePlayback() {
+    if (playback.playing) {
+      player.pause();
+    } else if (currentTrack && !playback.isLoaded) {
+      void playTrack(currentTrack, queue);
+    } else {
+      player.play();
     }
   }
 
@@ -569,7 +585,7 @@ function MainApp() {
           <TouchableOpacity
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             style={styles.miniButton}
-            onPress={() => (playback.playing ? player.pause() : player.play())}
+            onPress={togglePlayback}
           >
             <Ionicons name={playback.playing ? 'pause' : 'play'} size={22} color={C.text} />
           </TouchableOpacity>
@@ -1426,7 +1442,7 @@ function MainApp() {
           },
         ]}
       >
-        <StatusBar barStyle={isDarkTheme ? 'light-content' : 'dark-content'} backgroundColor={C.background} />
+        <StatusBar barStyle={isDarkTheme ? 'light-content' : 'dark-content'} />
 
         {/* Dismiss Handle */}
         <View style={styles.modalDismissHeader}>
@@ -1488,7 +1504,7 @@ function MainApp() {
               <TouchableOpacity
                 activeOpacity={0.8}
                 style={styles.nowPlayingPlayButton}
-                onPress={() => playback.playing ? player.pause() : player.play()}
+                onPress={togglePlayback}
               >
                 <Ionicons name={playback.playing ? 'pause' : 'play'} size={50} color={C.text} />
               </TouchableOpacity>
@@ -2015,7 +2031,6 @@ function MainApp() {
     <View style={[styles.appContainer, { backgroundColor: C.background }]}>
       <StatusBar
         barStyle={isDarkTheme ? 'light-content' : 'dark-content'}
-        backgroundColor={C.background}
       />
       {showBrandSplash && (
         <View style={styles.brandSplash}>

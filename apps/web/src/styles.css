@@ -16,3 +16,5 @@
 .asset-card[draggable=true]{cursor:grab}.asset-card[draggable=true]:active{cursor:grabbing}.asset-card[draggable=true].drag-over{border-color:var(--sage);background:#f2f6ec;box-shadow:0 0 0 3px rgba(114,150,103,.18)}.breadcrumbs button{border-radius:5px}.breadcrumbs button:has(+ svg){padding:5px 7px}.breadcrumbs button:hover{background:#edf2e7}.breadcrumbs button.crumb-current{background:#eff4e7}
 
 .activity-list{max-height:156px;overflow:hidden;mask-image:linear-gradient(to bottom,#000 0,#000 72%,transparent 100%);-webkit-mask-image:linear-gradient(to bottom,#000 0,#000 72%,transparent 100%)}
+
+.progress-track span{width:0;animation:none;transition:width .12s linear}

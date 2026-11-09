@@ -12,7 +12,8 @@
         {
           "supportsPictureInPicture": true
         }
-      ]
+      ],
+      "expo-status-bar"
     ]
   }
 }

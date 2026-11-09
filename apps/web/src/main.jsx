@@ -35,6 +35,28 @@ const api = async (path, options = {}) => {
   }
   return response.status === 204 ? undefined : response.json();
 };
+const uploadWithProgress = (path, body, onProgress) => new Promise((resolve, reject) => {
+  const request = new XMLHttpRequest();
+  request.open('POST', apiUrl(path));
+  request.setRequestHeader('Authorization', `Bearer ${getToken()}`);
+  request.setRequestHeader('Accept', 'application/json');
+  request.upload.onprogress = event => {
+    if (event.lengthComputable) onProgress(Math.min(100, event.loaded / event.total * 100));
+  };
+  request.onerror = () => reject(new Error('Network error while uploading.'));
+  request.onabort = () => reject(new Error('Upload was cancelled.'));
+  request.onload = () => {
+    let response;
+    try { response = request.responseText ? JSON.parse(request.responseText) : undefined; }
+    catch { reject(new Error('NAS server returned an invalid upload response.')); return; }
+    if (request.status < 200 || request.status >= 300) {
+      reject(new Error(response?.detail || response?.error || `NAS server returned ${request.status}`));
+      return;
+    }
+    resolve(response);
+  };
+  request.send(body);
+});
 
 const bytes = value => {
   const size = Number(value) || 0;
@@ -81,6 +103,7 @@ function App() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [uploadProgress, setUploadProgress] = useState('');
+  const [uploadPercent, setUploadPercent] = useState(0);
   const [uploadQueue, setUploadQueue] = useState([]);
   const [uploadIndex, setUploadIndex] = useState(0);
   const [uploadForm, setUploadForm] = useState(null);
@@ -128,6 +151,7 @@ function App() {
 
   const currentFolder = folders.find(folder => folder.id === folderId) || null;
   const currentUpload = uploadQueue[uploadIndex] || null;
+  const driveFiles = useMemo(() => items.filter(item => item.kind === 'file'), [items]);
   const sectionItems = useMemo(() => {
     if (section === 'favorites') return favorites;
     const kind = section === 'music' ? 'music' : section === 'movies' ? 'movie' : 'file';
@@ -172,10 +196,13 @@ function App() {
     let uploaded = 0;
     try {
       for (const file of files) {
-        setUploadProgress(`Uploading ${uploaded + 1} of ${files.length}: ${file.name}`);
+        const label = `Uploading ${uploaded + 1} of ${files.length}: ${file.name}`;
+        setUploadProgress(`${label} · 0%`); setUploadPercent(0);
         const data = new FormData(); data.append('file', file);
         const destination = section === 'drive' && folderId ? `?folder_id=${folderId}` : '';
-        await api(`/api/upload${destination}`, { method: 'POST', body: data });
+        await uploadWithProgress(`/api/upload${destination}`, data, percent => {
+          setUploadPercent(percent); setUploadProgress(`${label} · ${Math.floor(percent)}%`);
+        });
         uploaded += 1;
       }
       flash(`${uploaded} ${uploaded === 1 ? 'file' : 'files'} uploaded and indexed.`);
@@ -183,7 +210,7 @@ function App() {
     } catch (cause) {
       setError(`${cause.message}${uploaded ? ` (${uploaded} file${uploaded === 1 ? '' : 's'} uploaded before the error)` : ''}`);
       await load({ quiet: true });
-    } finally { setBusy(false); setUploadProgress(''); event.target.value = ''; }
+    } finally { setBusy(false); setUploadProgress(''); setUploadPercent(0); event.target.value = ''; }
   }
   function blankUploadMetadata(file, kind) {
     return { name: file.name, title: file.name.replace(/\.[^.]+$/, ''), artist: '', album: '', language: '', genre: '', description: '', release_date: '', media_type: kind === 'movie' ? (/\bS\d{1,2}\s*E\d{1,2}\b/i.test(file.name) ? 'show' : 'movie') : '', metadata_provider: '', external_id: '', artwork_url: '', artwork_file: null, edited_fields: [] };
@@ -216,18 +243,21 @@ function App() {
     }
     data.append('edited_fields', JSON.stringify(uploadForm.edited_fields || []));
     if (uploadForm.artwork_file) data.append('artwork', uploadForm.artwork_file);
-    setBusy(true); setError(''); setUploadProgress(`Uploading ${uploadIndex + 1} of ${uploadQueue.length}: ${currentUpload.name}`);
+    const uploadLabel = `Uploading ${uploadIndex + 1} of ${uploadQueue.length}: ${currentUpload.name}`;
+    setBusy(true); setError(''); setUploadProgress(`${uploadLabel} · 0%`); setUploadPercent(0);
     try {
-      await api('/api/upload', { method: 'POST', body: data });
+      await uploadWithProgress('/api/upload', data, percent => {
+        setUploadPercent(percent); setUploadProgress(`${uploadLabel} · ${Math.floor(percent)}%`);
+      });
       const nextIndex = uploadIndex + 1;
       if (nextIndex < uploadQueue.length) {
         const nextFile = uploadQueue[nextIndex]; setUploadIndex(nextIndex); setUploadForm(blankUploadMetadata(nextFile, kind));
-        setBusy(false); setUploadProgress(''); void lookupUpload(nextFile, kind); return;
+        setBusy(false); setUploadProgress(''); setUploadPercent(0); void lookupUpload(nextFile, kind); return;
       }
       flash(`${uploadQueue.length} ${kind === 'music' ? 'music file' : 'video'}${uploadQueue.length === 1 ? '' : 's'} uploaded and indexed.`);
       setUploadQueue([]); setUploadIndex(0); setUploadForm(null); await load({ quiet: true });
     } catch (cause) { setError(cause.message || 'Upload failed. Your file is still available to retry.'); }
-    finally { setBusy(false); setUploadProgress(''); }
+    finally { setBusy(false); setUploadProgress(''); setUploadPercent(0); }
   }
   function cancelMediaUpload() {
     if (busy) return;
@@ -414,10 +444,10 @@ function App() {
           <button className={!folderId ? 'crumb-current' : ''} onClick={() => { setFolderId(null); setFolderTrail([]); }} onDragOver={allowDriveDrop} onDragLeave={leaveDriveDrop} onDrop={event => void dropDriveItem(event, null)}>My Drive</button>
           {folderTrail.map((folder, index) => <React.Fragment key={folder.id}><ChevronRight size={14} /><button className={index === folderTrail.length - 1 ? 'crumb-current' : ''} onClick={() => goToTrail(index)} onDragOver={allowDriveDrop} onDragLeave={leaveDriveDrop} onDrop={event => void dropDriveItem(event, folder.id)}>{folder.name}</button></React.Fragment>)}
         </div>}
-        {uploadProgress && <div className="upload-status"><LoaderCircle size={16} className="spin" />{uploadProgress}<span className="progress-track"><span /></span></div>}
+        {uploadProgress && <div className="upload-status"><LoaderCircle size={16} className="spin" />{uploadProgress}<span className="progress-track" role="progressbar" aria-label="Upload progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.floor(uploadPercent)}><span style={{ width: `${uploadPercent}%` }} /></span></div>}
         <div className="section-heading"><div><p className="eyebrow">{section === 'drive' ? 'YOUR FILES' : section === 'favorites' ? 'SAVED ITEMS' : 'LIBRARY CONTENT'}</p><h2>{visibleItems.length + visibleFolders.length} items</h2></div><span className="view-note">{section === 'drive' ? 'Drag files or folders onto a folder to move them' : 'Synced with mobile apps'}</span></div>
         <div className={`library-grid ${section === 'drive' && driveLayout === 'list' ? 'list-layout' : ''}`}>
-          {visibleFolders.map(folder => <FolderCard key={`folder-${folder.id}`} folder={folder} folders={folders} items={items} draggable={section === 'drive'} onDragStart={event => beginDriveDrag(event, 'folder', folder)} onDragOver={allowDriveDrop} onDragLeave={leaveDriveDrop} onDrop={event => void dropDriveItem(event, folder.id)} onOpen={openFolder} onEdit={() => editTarget(folder, 'folder')} onDelete={() => void removeTarget(folder, 'folder')} />)}
+          {visibleFolders.map(folder => <FolderCard key={`folder-${folder.id}`} folder={folder} folders={folders} items={driveFiles} draggable={section === 'drive'} onDragStart={event => beginDriveDrag(event, 'folder', folder)} onDragOver={allowDriveDrop} onDragLeave={leaveDriveDrop} onDrop={event => void dropDriveItem(event, folder.id)} onOpen={openFolder} onEdit={() => editTarget(folder, 'folder')} onDelete={() => void removeTarget(folder, 'folder')} />)}
           {visibleItems.map(item => <MediaCard key={item.id} item={item} liked={favoriteIds.has(item.id)} draggable={section === 'drive'} onDragStart={event => beginDriveDrag(event, 'file', item)} onOpen={() => setSelected(item)} onEdit={() => editTarget(item, 'media')} onDelete={() => void removeTarget(item, 'media')} onFavorite={() => void toggleFavorite(item)} onPlaylist={section === 'music' ? () => { if (activePlaylist) void playlistAction('remove-track', null, item); else if (playlists.length === 1) void playlistAction('add-track', playlists[0], item); else { setPlaylistChoice(String(playlists[0]?.id || '')); setPlaylistPicker(item); } } : null} playlistMode={Boolean(activePlaylist)} onDownload={section === 'drive' ? () => window.open(playbackUrl(item), '_blank', 'noopener') : null} />)}
           {!visibleItems.length && !visibleFolders.length && <EmptyState title={query ? 'No matching items' : `No ${meta.title.toLowerCase()} here yet`} detail={query ? 'Try another search term.' : 'Upload something to get started. Your files will appear in the mobile apps too.'} />}
         </div>
