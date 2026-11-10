@@ -3,13 +3,35 @@
   "slug": "mobile-drive",
   "version": "1.0.0",
   "orientation": "portrait",
+  "icon": "./orbit-cloud-app-icon-1024.png",
   "userInterfaceStyle": "light",
   "ios": {
-    "supportsTablet": true
+    "supportsTablet": true,
+    "bundleIdentifier": "com.orbitnas.drive"
+  },
+  "android": {
+    "package": "com.orbitnas.drive",
+    "adaptiveIcon": {
+      "foregroundImage": "./orbit-cloud-app-icon-1024.png",
+      "backgroundColor": "#0875EB"
+    }
   },
   "plugins": [
     "expo-sharing",
     "expo-document-picker",
-    "expo-status-bar"
-  ]
+    "expo-status-bar",
+    [
+      "expo-build-properties",
+      {
+        "android": {
+          "usesCleartextTraffic": true
+        }
+      }
+    ]
+  ],
+  "extra": {
+    "eas": {
+      "projectId": "75ffcded-2201-400d-ba6a-a3ee4664a0c4"
+    }
+  }
 }

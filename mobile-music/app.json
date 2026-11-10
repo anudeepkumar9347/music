@@ -4,7 +4,7 @@
     "slug": "sonora-nas-player",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/apple_music_icon.png",
+    "icon": "./assets/sonora-app-icon.png",
     "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": true,
@@ -13,9 +13,15 @@
     "android": {
       "package": "com.sonora.nasplayer",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/apple_music_icon.png",
-        "backgroundColor": "#08080B"
-      }
+        "foregroundImage": "./assets/sonora-app-icon.png",
+        "backgroundColor": "#F30B12"
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ]
     },
     "plugins": [
       [
@@ -40,7 +46,20 @@
       "expo-secure-store",
       "expo-status-bar",
       "expo-font",
-      "expo-asset"
-    ]
+      "expo-asset",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "bef37155-33ef-469c-ac1e-06114ec63f00"
+      }
+    }
   }
 }

@@ -4,7 +4,18 @@
     "slug": "mobile-movies",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/movies-app-icon.png",
     "userInterfaceStyle": "dark",
+    "ios": {
+      "bundleIdentifier": "com.orbitnas.movies"
+    },
+    "android": {
+      "package": "com.orbitnas.movies",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/movies-app-icon.png",
+        "backgroundColor": "#00E68C"
+      }
+    },
     "plugins": [
       "expo-secure-store",
       [
@@ -13,7 +24,20 @@
           "supportsPictureInPicture": true
         }
       ],
-      "expo-status-bar"
-    ]
+      "expo-status-bar",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "b5fe3ad3-a6e4-4c3a-a83f-275ec7e82545"
+      }
+    }
   }
 }
