@@ -545,7 +545,7 @@ function Overview({ stats, items, folders, audit, systemMetrics, metricsRange, o
       </div>
       {systemMetrics?.current ? <>
         <div className="ops-system-summary">
-          <SystemValue label="CPU LOAD" value={systemMetrics.current.cpu_percent == null ? 'Sampling…' : `${systemMetrics.current.cpu_percent.toFixed(1)}%`} detail={`${systemMetrics.current.cpu_cores} logical cores`} />
+          <SystemValue label="CPU UTILIZATION" value={systemMetrics.current.cpu_percent == null ? 'Sampling…' : `${systemMetrics.current.cpu_percent.toFixed(1)}%`} detail={`${systemMetrics.current.cpu_cores} logical cores`} />
           <SystemValue label="MEMORY USED" value={systemMetrics.current.memory_percent == null ? 'Unavailable' : `${systemMetrics.current.memory_percent.toFixed(1)}%`} detail={`${gib(systemMetrics.current.memory_used_bytes)} / ${gib(systemMetrics.current.memory_total_bytes)}`} />
           <SystemValue label="UPTIME" value={durationLabel(systemMetrics.current.uptime_seconds)} detail={`Load ${systemMetrics.current.load_1m.toFixed(2)} / ${systemMetrics.current.load_5m.toFixed(2)} / ${systemMetrics.current.load_15m.toFixed(2)}`} />
           <SystemValue label="CPU TEMPERATURE" value={systemMetrics.current.cpu_temperature_c == null ? 'Unavailable' : `${systemMetrics.current.cpu_temperature_c.toFixed(1)} °C`} detail="Host thermal sensor" />
