@@ -407,6 +407,7 @@ html[data-theme="light"]{--ops-blue:#3978ad;--ops-slate:#aab4bf;--ops-violet:#95
 .ops-panel-option input{accent-color:#668db2}
 .ops-wall-status{display:flex;align-items:center;gap:15px;min-height:19px;padding:0 5px;border-bottom:1px solid #252a30;color:#8b96a1;font-size:8px;letter-spacing:.2px}
 .ops-wall-status>span:first-child{color:#a6c18c}
+.ops-wall-status .ops-wall-metrics-error{color:#e59b91}
 .ops-wall-status i{display:inline-block;width:6px;height:6px;margin-right:5px;border-radius:50%;background:#8eb46b}
 .ops-wall-grid{display:grid;height:calc(100vh - 84px);min-height:400px;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:minmax(130px,1.25fr) minmax(130px,1.25fr) minmax(105px,.85fr);grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:5px;align-items:stretch}
 .ops-wall-panel{position:relative;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;border:1px solid #292e35;border-radius:2px;background:#111419}

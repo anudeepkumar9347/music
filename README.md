@@ -29,7 +29,7 @@ Copy `nas/.env.example` to `nas/.env` to see the server settings. Keep provider 
 - **Drive** browses all files and folders, with folder creation, moving, renaming, deletion, previews, search, and uploads.
 - **Music** filters audio items and supports playback, favorites, and metadata editing. Selecting multiple songs searches each filename, shows the suggested title, artist, and album together, and lets you choose which tracks to upload.
 - **Movies** filters video items and supports playback, favorites, and movie or TV-show classification. Selecting multiple videos searches their filenames and shows suggested titles, type, year, and genre together, letting you choose which videos to upload.
-- **Overview** shows disk usage and catalog counts, and provides library scan, database backup, and recent activity tools.
+- **Overview** shows host performance telemetry, disk usage, and catalog counts, and provides library scan, database backup, and recent activity tools.
 
 Changes go through the shared API, so the web interface and mobile apps see the same library and favorites.
 

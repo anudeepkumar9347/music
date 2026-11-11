@@ -90,6 +90,7 @@ function App() {
   const [driveLayout, setDriveLayout] = useState('grid');
   const [stats, setStats] = useState(null);
   const [systemMetrics, setSystemMetrics] = useState(null);
+  const [metricsError, setMetricsError] = useState('');
   const [metricsRange, setMetricsRange] = useState(6);
   const [audit, setAudit] = useState([]);
   const [folderId, setFolderId] = useState(null);
@@ -145,8 +146,15 @@ function App() {
     let active = true;
     const refreshMetrics = () => {
       api(`/api/system/metrics?range_hours=${metricsRange}`)
-        .then(result => { if (active) setSystemMetrics(result); })
-        .catch(() => { if (active) setSystemMetrics(null); });
+        .then(result => {
+          if (active) {
+            setSystemMetrics(result);
+            setMetricsError('');
+          }
+        })
+        .catch(cause => {
+          if (active) setMetricsError(cause instanceof Error ? cause.message : 'Could not load host telemetry.');
+        });
     };
     refreshMetrics();
     const timer = window.setInterval(refreshMetrics, 15000);
@@ -527,7 +535,7 @@ function App() {
         </div>
       </header>
 
-      {section === 'overview' ? <Overview stats={stats} items={items} folders={folders} audit={audit} systemMetrics={systemMetrics} metricsRange={metricsRange} onMetricsRange={setMetricsRange} onNavigate={navigate} onAdmin={runAdminAction} busy={busy} /> : <>
+      {section === 'overview' ? <Overview stats={stats} items={items} folders={folders} audit={audit} systemMetrics={systemMetrics} metricsError={metricsError} metricsRange={metricsRange} onMetricsRange={setMetricsRange} onNavigate={navigate} onAdmin={runAdminAction} busy={busy} /> : <>
         <p className="page-description">{meta.description}</p>
         {section === 'movies' && <div className="metadata-credit"><span>Movie and show metadata provided by <a href="https://www.omdbapi.com/" target="_blank" rel="noreferrer">OMDb API</a>.</span></div>}
         <div className="toolbar">
@@ -575,7 +583,7 @@ function FilterSelect({ icon, label, value, options, onChange }) {
   return <label className="filter-select">{icon}<select value={value} onChange={event => onChange(event.target.value)} aria-label={`Filter by ${label.toLowerCase()}`}><option value="">All {label.toLowerCase()}s</option>{options.map(option => <option key={option} value={option}>{option}</option>)}</select></label>;
 }
 
-function Overview({ stats, items, folders, audit, systemMetrics, metricsRange, onMetricsRange, onNavigate, onAdmin, busy }) {
+function Overview({ stats, items, folders, audit, systemMetrics, metricsError, metricsRange, onMetricsRange, onNavigate, onAdmin, busy }) {
   const defaults = ['temperature', 'network', 'library', 'disk', 'cpu', 'load', 'memory', 'storage'];
   const [order, setOrder] = useState(() => {
     try { const saved = JSON.parse(localStorage.getItem('orbit-home-order')); return Array.isArray(saved) ? [...saved.filter(id => defaults.includes(id)), ...defaults.filter(id => !saved.includes(id))] : defaults; }
@@ -627,7 +635,7 @@ function Overview({ stats, items, folders, audit, systemMetrics, metricsRange, o
     ['memory', 'Memory'], ['storage', 'Filesystem capacity'],
   ];
   const panels = {
-    temperature: ['CPU Temperature', 'Host thermal sensor · °C', <LineChart title="CPU temperature" unit="°C" points={history} series={[{ key: 'cpu_temperature_c', label: 'CPU', color: 'amber' }]} format={value => `${value.toFixed(1)} °C`}/>],
+    temperature: ['CPU Temperature', 'Host thermal sensor · °C', <LineChart title="CPU temperature" unit="°C" points={history} series={[{ key: 'cpu_temperature_c', label: 'CPU', color: 'amber' }]} format={value => `${value.toFixed(1)} °C`} emptyMessage="No readable CPU temperature sensor is available on this host."/>],
     network: ['Interface Traffic', 'Aggregate receive / transmit · MiB/s', <LineChart title="Interface traffic" unit="MiB/s" points={history} series={[{ key: 'network_rx_bytes_per_sec', label: 'Receive', color: 'blue', scale: 1024 ** 2 }, { key: 'network_tx_bytes_per_sec', label: 'Transmit', color: 'violet', scale: 1024 ** 2 }]} format={value => `${value.toFixed(2)} MiB/s`}/>],
     library: ['Library Distribution', 'Indexed items by collection', <div className="ops-wall-memory"><DonutChart rows={libraryRows} centerValue={formatCount(items.length)} centerLabel="items"/><div className="ops-donut-legend">{groups.map(group => <span key={group.label}><i className={group.color}/>{group.label}<strong>{formatCount(group.count)}</strong></span>)}</div></div>],
     disk: ['Disk Activity', 'Aggregate block-device read / write · MiB/s', <LineChart title="Disk activity" unit="MiB/s" points={history} series={[{ key: 'disk_read_bytes_per_sec', label: 'Read', color: 'blue', scale: 1024 ** 2 }, { key: 'disk_write_bytes_per_sec', label: 'Write', color: 'violet', scale: 1024 ** 2 }]} format={value => `${value.toFixed(2)} MiB/s`}/>],
@@ -649,7 +657,7 @@ function Overview({ stats, items, folders, audit, systemMetrics, metricsRange, o
         </div>}
       </div>
     </header>
-    <div className="ops-wall-status"><span><i/>HOST ONLINE</span><span>CPU {current?.cpu_percent == null ? '—' : `${current.cpu_percent.toFixed(1)}%`}</span><span>RAM {current?.memory_percent == null ? '—' : `${current.memory_percent.toFixed(1)}%`}</span><span>UPTIME {current ? durationLabel(current.uptime_seconds) : '—'}</span><span>STORAGE {stats ? `${usage.toFixed(1)}% USED` : '—'}</span></div>
+    <div className="ops-wall-status"><span><i/>HOST ONLINE</span><span>CPU {current?.cpu_percent == null ? '—' : `${current.cpu_percent.toFixed(1)}%`}</span><span>RAM {current?.memory_percent == null ? '—' : `${current.memory_percent.toFixed(1)}%`}</span><span>UPTIME {current ? durationLabel(current.uptime_seconds) : '—'}</span><span>STORAGE {stats ? `${usage.toFixed(1)}% USED` : '—'}</span>{metricsError && <span className="ops-wall-metrics-error" role="alert">Telemetry unavailable: {metricsError}</span>}</div>
     <div className="ops-wall-grid">
       {order.filter(id => visible.includes(id)).map(id => {
         const [title, subtitle, content] = panels[id];
@@ -698,7 +706,7 @@ function durationLabel(seconds) {
   return days ? `${days}d ${hours}h` : hours ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 
-function LineChart({ title, unit, points, series, min, max, format }) {
+function LineChart({ title, unit, points, series, min, max, format, emptyMessage = 'Waiting for valid samples.' }) {
   const width = 640, height = 160, padX = 8, padY = 12;
   const values = points.flatMap(point => series.map(item => point[item.key] == null ? null : Number(point[item.key]) / (item.scale || 1))).filter(value => value != null && Number.isFinite(value));
   const low = min ?? 0;
@@ -721,7 +729,7 @@ function LineChart({ title, unit, points, series, min, max, format }) {
       </svg></div>
       <div className="ops-line-legend">{latest.map(item => <span key={item.key}><i className={item.color}/>{item.label}<strong>{item.value == null ? '—' : format(item.value)}</strong></span>)}</div>
       <div className="ops-line-time"><span>{points[0]?.timestamp ? new Date(points[0].timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span><span>{points.at(-1)?.timestamp ? new Date(points.at(-1).timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span></div>
-    </> : <p className="ops-empty">Waiting for valid samples.</p>}
+    </> : <p className="ops-empty">{emptyMessage}</p>}
   </section>;
 }
 

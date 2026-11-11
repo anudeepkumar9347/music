@@ -36,7 +36,7 @@ The web app proxies API requests through its own origin. Mobile clients connect 
 
 ## Host system monitoring
 
-The web overview reads authenticated host metrics from `GET /api/system/metrics?range_hours=6`. The API samples CPU utilization, memory, load averages, uptime, network throughput, disk I/O, and available CPU temperature sensors every 15 seconds. The dashboard can display 1, 6, or 24 hours of samples.
+The web overview reads authenticated host metrics from `GET /api/system/metrics?range_hours=6`. The API samples CPU utilization, memory, load averages, uptime, network throughput, disk I/O, and available CPU temperature sensors every 15 seconds. Linux uses host `/proc` and `/sys` counters when available; local API runs on Windows use `psutil` host counters. The dashboard can display 1, 3, 6, or 24 hours of samples. CPU temperature is shown only when the host exposes a readable sensor.
 
 The API container receives read-only mounts for selected host `/proc` counters and `/sys` hardware metadata. It does not use privileged mode or the host PID namespace, does not run shell commands for monitoring, and does not write monitoring samples into the media SQLite database. Samples are kept in a bounded in-memory buffer (up to 24 hours) and are reset when the API container restarts. Temperature is shown only when the host exposes a readable sensor. Disk I/O and network throughput are aggregate host counters; this is not SMART health, per-disk temperature, or per-process accounting.
 

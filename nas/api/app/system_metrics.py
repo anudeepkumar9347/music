@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import psutil
+
 SAMPLE_INTERVAL_SECONDS = max(5, int(os.getenv("SYSTEM_METRICS_INTERVAL", "15")))
 RETENTION_HOURS = 24
 MAX_SAMPLES = int(RETENTION_HOURS * 3600 / SAMPLE_INTERVAL_SECONDS)
@@ -30,7 +32,11 @@ class MetricsCollector:
     def __init__(self, proc_root: str | Path | None = None, sys_root: str | Path | None = None) -> None:
         preferred_proc = Path(proc_root or os.getenv("ORBIT_HOST_PROC", "/host/proc"))
         preferred_sys = Path(sys_root or os.getenv("ORBIT_HOST_SYS", "/host/sys"))
-        self.proc = preferred_proc if (preferred_proc / "stat").is_file() else Path("/proc")
+        preferred_has_proc = self._has_cpu_counters(preferred_proc)
+        fallback_proc = Path("/proc")
+        fallback_has_proc = False if preferred_has_proc else self._has_cpu_counters(fallback_proc)
+        self.proc = preferred_proc if preferred_has_proc else fallback_proc
+        self.use_psutil = not (preferred_has_proc or fallback_has_proc)
         self.sys = preferred_sys if preferred_sys.exists() else Path("/sys")
         self.samples: deque[dict[str, Any]] = deque(maxlen=MAX_SAMPLES)
         self.lock = threading.Lock()
@@ -41,7 +47,20 @@ class MetricsCollector:
         self.previous_disks: dict[str, tuple[int, int]] = {}
         self.previous_time: float | None = None
 
+    @staticmethod
+    def _has_cpu_counters(root: Path) -> bool:
+        try:
+            return any(line.startswith("cpu ") for line in (root / "stat").read_text().splitlines())
+        except OSError:
+            return False
+
     def _read_cpu(self) -> tuple[float | None, int]:
+        if self.use_psutil:
+            try:
+                percent = round(psutil.cpu_percent(interval=None), 2)
+                return percent, max(1, psutil.cpu_count(logical=True) or 1)
+            except psutil.Error:
+                return None, max(1, psutil.cpu_count(logical=True) or 1)
         try:
             lines = (self.proc / "stat").read_text().splitlines()
             cpu_line = next(line for line in lines if line.startswith("cpu "))
@@ -62,6 +81,14 @@ class MetricsCollector:
             return None, max(1, os.cpu_count() or 1)
 
     def _read_memory(self) -> tuple[int, int, int]:
+        if self.use_psutil:
+            try:
+                memory = psutil.virtual_memory()
+                available = int(memory.available)
+                total = int(memory.total)
+                return total, max(0, total - available), available
+            except psutil.Error:
+                return 0, 0, 0
         try:
             values: dict[str, int] = {}
             for line in (self.proc / "meminfo").read_text().splitlines():
@@ -77,6 +104,15 @@ class MetricsCollector:
 
     def _read_network(self) -> tuple[dict[str, tuple[int, int]], list[str]]:
         counters: dict[str, tuple[int, int]] = {}
+        if self.use_psutil:
+            try:
+                for name, stats in (psutil.net_io_counters(pernic=True) or {}).items():
+                    if name.lower() == "lo" or name.lower().startswith("loopback"):
+                        continue
+                    counters[name] = (stats.bytes_recv, stats.bytes_sent)
+            except (OSError, psutil.Error):
+                pass
+            return counters, sorted(counters)
         try:
             lines = (self.proc / "net" / "dev").read_text().splitlines()[2:]
             for line in lines:
@@ -95,6 +131,13 @@ class MetricsCollector:
 
     def _read_disks(self) -> tuple[dict[str, tuple[int, int]], list[str]]:
         counters: dict[str, tuple[int, int]] = {}
+        if self.use_psutil:
+            try:
+                for name, stats in (psutil.disk_io_counters(perdisk=True) or {}).items():
+                    counters[name] = (stats.read_bytes, stats.write_bytes)
+            except (OSError, psutil.Error):
+                pass
+            return counters, sorted(counters)
         try:
             lines = (self.proc / "diskstats").read_text().splitlines()
             for line in lines:
@@ -114,6 +157,20 @@ class MetricsCollector:
 
     def _temperature(self) -> float | None:
         candidates: list[tuple[int, float]] = []
+        if self.use_psutil:
+            try:
+                for name, sensors in psutil.sensors_temperatures().items():
+                    for sensor in sensors:
+                        label = f"{name} {sensor.label}".lower()
+                        if sensor.current is None:
+                            continue
+                        priority = 0 if any(word in label for word in ("package", "cpu", "tctl", "tdie")) else 2
+                        candidates.append((priority, float(sensor.current)))
+            except (AttributeError, NotImplementedError, OSError, psutil.Error):
+                return None
+            if not candidates:
+                return None
+            return round(sorted(candidates, key=lambda item: item[0])[0][1], 1)
         thermal_root = self.sys / "class" / "thermal"
         try:
             for zone in thermal_root.glob("thermal_zone*"):
@@ -160,13 +217,14 @@ class MetricsCollector:
         self.previous_disks = disks
 
         try:
-            uptime_seconds = _number((self.proc / "uptime").read_text().split()[0])
-        except (OSError, IndexError):
+            uptime_seconds = time.time() - psutil.boot_time() if self.use_psutil else _number((self.proc / "uptime").read_text().split()[0])
+        except (OSError, IndexError, psutil.Error):
             uptime_seconds = 0.0
         try:
-            loads = [_number(value) for value in (self.proc / "loadavg").read_text().split()[:3]]
+            raw_loads = psutil.getloadavg() if self.use_psutil else (self.proc / "loadavg").read_text().split()[:3]
+            loads = [_number(value) for value in raw_loads[:3]]
             load_1m, load_5m, load_15m = (loads + [0.0, 0.0, 0.0])[:3]
-        except (OSError, ValueError):
+        except (OSError, ValueError, NotImplementedError, psutil.Error):
             load_1m = load_5m = load_15m = 0.0
 
         timestamp = datetime.now(timezone.utc).isoformat()
