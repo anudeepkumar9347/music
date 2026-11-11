@@ -43,6 +43,7 @@ const uploadWithProgress = (path, body, onProgress) => new Promise((resolve, rej
   request.upload.onprogress = event => {
     if (event.lengthComputable) onProgress(Math.min(100, event.loaded / event.total * 100));
   };
+  request.upload.onload = () => onProgress(100, true);
   request.onerror = () => reject(new Error('Network error while uploading.'));
   request.onabort = () => reject(new Error('Upload was cancelled.'));
   request.onload = () => {
@@ -109,6 +110,7 @@ function App() {
   const [uploadForm, setUploadForm] = useState(null);
   const [uploadLookupBusy, setUploadLookupBusy] = useState(false);
   const [uploadLookupMessage, setUploadLookupMessage] = useState('');
+  const [uploadError, setUploadError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('orbit-theme') || 'dark');
@@ -258,10 +260,10 @@ function App() {
     data.append('edited_fields', JSON.stringify(uploadForm.edited_fields || []));
     if (uploadForm.artwork_file) data.append('artwork', uploadForm.artwork_file);
     const uploadLabel = `Uploading ${uploadIndex + 1} of ${uploadQueue.length}: ${currentUpload.name}`;
-    setBusy(true); setError(''); setUploadProgress(`${uploadLabel} · 0%`); setUploadPercent(0);
+    setBusy(true); setError(''); setUploadError(''); setUploadProgress(`${uploadLabel} · 0%`); setUploadPercent(0);
     try {
-      await uploadWithProgress('/api/upload', data, percent => {
-        setUploadPercent(percent); setUploadProgress(`${uploadLabel} · ${Math.floor(percent)}%`);
+      await uploadWithProgress('/api/upload', data, (percent, sent = false) => {
+        setUploadPercent(percent); setUploadProgress(sent ? 'File sent · waiting for the NAS to finish indexing…' : `${uploadLabel} · ${Math.floor(percent)}%`);
       });
       const nextIndex = uploadIndex + 1;
       if (nextIndex < uploadQueue.length) {
@@ -270,12 +272,15 @@ function App() {
       }
       flash(`${uploadQueue.length} ${kind === 'music' ? 'music file' : 'video'}${uploadQueue.length === 1 ? '' : 's'} uploaded and indexed.`);
       setUploadQueue([]); setUploadIndex(0); setUploadForm(null); await load({ quiet: true });
-    } catch (cause) { setError(cause.message || 'Upload failed. Your file is still available to retry.'); }
-    finally { setBusy(false); setUploadProgress(''); setUploadPercent(0); }
+    } catch (cause) {
+      const message = cause.message || 'Upload failed. Your file is still available to retry.';
+      setUploadError(message);
+      setError(message);
+    } finally { setBusy(false); setUploadProgress(''); setUploadPercent(0); }
   }
   function cancelMediaUpload() {
     if (busy) return;
-    setUploadQueue([]); setUploadIndex(0); setUploadForm(null); setUploadLookupMessage('');
+    setUploadQueue([]); setUploadIndex(0); setUploadForm(null); setUploadLookupMessage(''); setUploadError('');
   }
 
   async function createFolder() {
@@ -466,7 +471,7 @@ function App() {
     </main>
 
     {selected && <MediaPlayer item={selected} url={playbackUrl(selected)} onClose={() => setSelected(null)} onEdit={() => editTarget(selected, 'media')} onDelete={() => void removeTarget(selected, 'media')} />}
-    {currentUpload && uploadForm && <UploadMetadataDialog kind={section === 'music' ? 'music' : 'movie'} file={currentUpload} index={uploadIndex} total={uploadQueue.length} form={uploadForm} setForm={setUploadForm} lookupBusy={uploadLookupBusy} lookupMessage={uploadLookupMessage} uploading={busy} onCancel={cancelMediaUpload} onSubmit={submitMediaUpload} />}
+    {currentUpload && uploadForm && <UploadMetadataDialog kind={section === 'music' ? 'music' : 'movie'} file={currentUpload} index={uploadIndex} total={uploadQueue.length} form={uploadForm} setForm={setUploadForm} lookupBusy={uploadLookupBusy} lookupMessage={uploadLookupMessage} uploading={busy} uploadProgress={uploadProgress} uploadPercent={uploadPercent} uploadError={uploadError} onCancel={cancelMediaUpload} onSubmit={submitMediaUpload} />}
     {dialog && <EditDialog kind={dialog.kind} isVideo={dialog.target?.kind === 'movie'} form={form} setForm={setForm} folders={folders} onClose={() => setDialog(null)} onSave={saveDialog} />}
     {playlistPicker && <Modal title="Add to playlist" onClose={() => setPlaylistPicker(null)}><div className="playlist-picker"><p>Add <strong>{playlistPicker.title || playlistPicker.name}</strong> to a music playlist.</p><label>Playlist<select value={playlistChoice} onChange={event => setPlaylistChoice(event.target.value)}><option value="" disabled>Select a playlist</option>{playlists.map(playlist => <option key={playlist.id} value={playlist.id}>{playlist.name}</option>)}</select></label><div className="dialog-actions"><button className="button button-light" onClick={() => setPlaylistPicker(null)}>Cancel</button><button className="button button-dark" onClick={() => void playlistAction('add-track', null, playlistPicker)}><ListMusic size={15}/>Add track</button></div></div></Modal>}
     {settingsOpen && <Modal title="Connection settings" onClose={() => setSettingsOpen(false)}><form onSubmit={saveToken} className="settings-form"><p>Set the NAS API address and the same auth string as <code>API_TOKEN</code> in the server environment. These values are saved only in this browser.</p><label>API server URL<input type="url" placeholder="Leave blank to use this site's /api proxy" value={apiUrlDraft} onChange={event => setApiUrlDraft(event.target.value)} autoComplete="url" /></label><label>Auth string (API token)<input type="password" value={tokenDraft} onChange={event => setTokenDraft(event.target.value)} autoComplete="current-password" /></label><div className="dialog-actions"><button type="button" className="button button-light" onClick={() => setSettingsOpen(false)}>Cancel</button><button className="button button-dark">Save and reconnect</button></div></form></Modal>}
@@ -695,7 +700,7 @@ function Modal({ title, onClose, children, className = '' }) {
   return <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><section className={`modal-card ${className}`}><header><h3>{title}</h3><button className="icon-button" onClick={onClose} aria-label="Close"><X size={19}/></button></header>{children}</section></div>;
 }
 
-function UploadMetadataDialog({ kind, file, index, total, form, setForm, lookupBusy, lookupMessage, uploading, onCancel, onSubmit }) {
+function UploadMetadataDialog({ kind, file, index, total, form, setForm, lookupBusy, lookupMessage, uploading, uploadProgress, uploadPercent, uploadError, onCancel, onSubmit }) {
   const changeField = (field, value) => setForm(current => ({
     ...current,
     [field]: value,
@@ -713,6 +718,8 @@ function UploadMetadataDialog({ kind, file, index, total, form, setForm, lookupB
     <form className="upload-metadata-form" onSubmit={onSubmit}>
       <div className="upload-file-summary"><span className={`upload-type-icon ${kind}`}>{kind === 'music' ? <FileAudio size={20}/> : <FileVideo size={20}/>}</span><div><strong title={file.name}>{file.name}</strong><small>{bytes(file.size)} · {extension(file.name)} file</small></div><span className="upload-step">{index + 1}/{total}</span></div>
       <div className={`lookup-status ${lookupBusy ? 'checking' : ''}`}><span className="lookup-indicator">{lookupBusy ? <LoaderCircle size={15} className="spin"/> : <Check size={14}/>}</span><span>{lookupMessage}</span></div>
+      {uploading && <div className="dialog-upload-status" role="status"><div><LoaderCircle size={15} className="spin"/><span>{uploadProgress || 'Preparing upload…'}</span></div><span className="progress-track" role="progressbar" aria-label="Upload progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.floor(uploadPercent)}><span style={{ width: `${uploadPercent}%` }} /></span></div>}
+      {uploadError && !uploading && <div className="dialog-upload-error" role="alert">{uploadError} You can correct the issue or try again.</div>}
       <div className="upload-form-grid">
         <section className="artwork-picker"><p className="form-section-label">COVER ART / POSTER</p><div className="artwork-preview">{preview ? <img src={preview} alt="Selected artwork preview" /> : <span>{kind === 'music' ? <AudioLines size={26}/> : <Film size={26}/>}Artwork will show here</span>}</div><label className="button button-light artwork-file-button">Choose your own image<input type="file" accept="image/*" onChange={event => { const artworkFile = event.target.files?.[0] || null; changeField('artwork', artworkFile); setForm(value => ({ ...value, artwork_file: artworkFile, artwork_url: artworkFile ? '' : value.artwork_url })); event.target.value = ''; }}/></label>{form.metadata_provider && <small className="provider-note">Suggested by {form.metadata_provider}</small>}</section>
         <section className="metadata-fields"><p className="form-section-label">FILE INFORMATION</p>
