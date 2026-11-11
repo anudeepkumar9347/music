@@ -44,7 +44,7 @@ After pulling an update, recreate the API container so the new read-only mounts 
 
 ```sh
 cd nas
-docker compose up -d --build api
+docker compose up -d --build api web
 ```
 
 ## Automatic metadata and artwork
