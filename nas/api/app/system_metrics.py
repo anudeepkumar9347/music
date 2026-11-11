@@ -196,8 +196,13 @@ class MetricsCollector:
         if self.thread and self.thread.is_alive():
             return
         self.stop_event.clear()
-        with self.lock:
-            self.samples.append(self.sample())
+        try:
+            initial = self.sample()
+            with self.lock:
+                self.samples.append(initial)
+        except Exception:
+            # A missing or restricted host metric must not prevent the media API from starting.
+            pass
         self.thread = threading.Thread(target=self._run, name="orbit-system-metrics", daemon=True)
         self.thread.start()
 
