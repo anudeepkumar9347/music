@@ -368,6 +368,65 @@ def music_metadata_lookup(path: Path, metadata: dict[str, str | None], *, force_
     return result
 
 
+def itunes_music_metadata_lookup(path: Path, metadata: dict[str, str | None]) -> dict[str, str | None]:
+    global ITUNES_LAST_REQUEST
+    with ITUNES_LOCK:
+        wait = 3.1 - (time.monotonic() - ITUNES_LAST_REQUEST)
+        if wait > 0:
+            time.sleep(wait)
+        ITUNES_LAST_REQUEST = time.monotonic()
+
+    title = str(metadata.get("title") or path.stem)
+    artist = str(metadata.get("artist") or "")
+    term = " ".join(part for part in (artist, title) if part)
+    query = urllib.parse.urlencode({
+        "term": term,
+        "country": ITUNES_COUNTRY or "US",
+        "media": "music",
+        "entity": "song",
+        "limit": "10",
+        "lang": "en_us",
+    })
+    response = request_json(f"https://itunes.apple.com/search?{query}", timeout=8)
+    candidates = response.get("results", []) if response else []
+    wanted_title = normalized_text(title)
+    wanted_artist = normalized_text(artist)
+    scored: list[tuple[float, dict[str, Any]]] = []
+    for candidate in candidates:
+        candidate_title = normalized_text(candidate.get("trackName"))
+        candidate_artist = normalized_text(candidate.get("artistName"))
+        if not candidate_title:
+            continue
+        title_score = SequenceMatcher(None, wanted_title, candidate_title).ratio()
+        if wanted_artist:
+            artist_score = SequenceMatcher(None, wanted_artist, candidate_artist).ratio() if candidate_artist else 0
+            score = title_score * 0.72 + artist_score * 0.28
+        else:
+            score = title_score
+        scored.append((score, candidate))
+    if not scored:
+        return {}
+    score, candidate = max(scored, key=lambda row: row[0])
+    if score < 0.84:
+        return {}
+
+    artwork = candidate.get("artworkUrl100")
+    if artwork:
+        artwork = re.sub(r"/\d+x\d+bb\.", "/600x600bb.", artwork)
+    release_date = str(candidate.get("releaseDate") or "")[:10] or None
+    track_id = candidate.get("trackId")
+    return {
+        "title": candidate.get("trackName"),
+        "artist": candidate.get("artistName"),
+        "album": candidate.get("collectionName"),
+        "genre": candidate.get("primaryGenreName"),
+        "release_date": release_date,
+        "external_id": f"itunes:song:{track_id}" if track_id else None,
+        "metadata_provider": "itunes",
+        "_artwork_url": artwork,
+    }
+
+
 def omdb_request(params: dict[str, str]) -> dict[str, Any] | None:
     if not OMDB_API_KEY:
         return None
@@ -710,6 +769,8 @@ def lookup_upload_metadata(filename: str, kind: str, _: None = Depends(require_t
             "artwork_path": None, "dominant_color": None, "checksum": None, "duration": None,
         }
         remote = music_metadata_lookup(source, metadata, force_match=True)
+        if not remote:
+            remote = itunes_music_metadata_lookup(source, metadata)
     else:
         title, _, detected_type = clean_media_title(source)
         metadata = {

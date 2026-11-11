@@ -18,7 +18,7 @@ The Docker build uses one build job to reduce peak resource use on an 8 GB machi
 
 ## Music and movie metadata
 
-Uploads are inspected by FFprobe. Music uploads are matched against MusicBrainz and album covers are fetched from the Cover Art Archive; these lookups do not need an account or API key. The backend saves the chosen metadata in SQLite and artwork under `data/artwork/`, then all apps receive it through the shared library API. Optional audio fingerprint recognition uses AcoustID and Chromaprint; set `ACOUSTID_APP_KEY` in `nas/.env` after registering an AcoustID application for better matches when filenames or embedded tags are poor.
+Uploads are inspected by FFprobe. Music uploads are matched against MusicBrainz first, with Apple's public iTunes Search API as a fallback when MusicBrainz has no confident match. Album covers come from the Cover Art Archive or iTunes, and neither catalog requires an account or API key. The backend saves the chosen metadata in SQLite and artwork under `data/artwork/`, then all apps receive it through the shared library API. Optional audio fingerprint recognition uses AcoustID and Chromaprint; set `ACOUSTID_APP_KEY` in `nas/.env` after registering an AcoustID application for better matches when filenames or embedded tags are poor.
 
 Movie uploads use OMDb for movie and TV metadata, including posters, plot, genre, language, and release date. Create an OMDb API key at <https://www.omdbapi.com/apikey.aspx> and set `OMDB_API_KEY` in `nas/.env`. If no OMDb key is configured or OMDb has no match, the server falls back to Apple's public iTunes Search API. The web and mobile Movies apps credit OMDb. Local video frame artwork and your media files remain in `data/`.
 

@@ -37,9 +37,9 @@ The web app proxies API requests through its own origin. Mobile clients connect 
 
 Music and Movies uploads open a metadata review form before the file is sent to the NAS. The form searches by filename and lets you review or edit the suggested fields, use the suggested cover/poster, or upload your own image. Multiple selected media files pass through the form one by one. The API also reads embedded media tags when the file arrives.
 
-It searches MusicBrainz for audio metadata and Cover Art Archive for album art without requiring credentials. Optional AcoustID fingerprint matching improves recognition when a track has weak or missing tags; register an AcoustID application and set `ACOUSTID_APP_KEY` in `.env`.
+It searches MusicBrainz for audio metadata and Cover Art Archive for album art without requiring credentials. If MusicBrainz returns no confident match, it falls back to Apple's public iTunes Search API for track, artist, album, release date, genre, and artwork. Optional AcoustID fingerprint matching improves recognition when a track has weak or missing tags; register an AcoustID application and set `ACOUSTID_APP_KEY` in `.env`.
 
-Movie and TV uploads use OMDb for title matching, posters, plot, genre, language, and release date. Get an API key from <https://www.omdbapi.com/apikey.aspx> and set `OMDB_API_KEY` in `nas/.env`. If the key is empty or OMDb has no match, the server falls back to Apple's public iTunes Search API. Music lookups continue to use MusicBrainz; `ACOUSTID_APP_KEY` is an optional key for audio fingerprint matching.
+Movie and TV uploads use OMDb for title matching, posters, plot, genre, language, and release date. Get an API key from <https://www.omdbapi.com/apikey.aspx> and set `OMDB_API_KEY` in `nas/.env`. If the key is empty or OMDb has no match, the server falls back to Apple's public iTunes Search API. `ACOUSTID_APP_KEY` is an optional key for audio fingerprint matching.
 
 The selected metadata is stored in SQLite, and downloaded artwork is stored under `../data/artwork/`. The web and mobile clients read those assets from the NAS API, so they share one catalog and do not independently contact metadata providers.
 
