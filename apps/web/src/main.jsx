@@ -3,8 +3,8 @@ import { createRoot } from 'react-dom/client';
 import {
   Activity, ArrowDownToLine, ArrowLeft, AudioLines, Check, ChevronRight, CircleHelp, Cloud,
   Database, Film, File, FileAudio, FileImage, FileVideo, Folder, FolderPlus, HardDrive,
-  Heart, LayoutDashboard, ListFilter, LoaderCircle, MoreHorizontal, Pencil, Plus,
-  RefreshCw, Search, Settings2, ShieldCheck, Trash2, Upload, X, ListMusic, Languages,
+  LayoutDashboard, ListFilter, LoaderCircle, MoreHorizontal, Moon, Pencil, Plus,
+  RefreshCw, Search, Settings2, ShieldCheck, Sun, Trash2, Upload, X, ListMusic, Languages,
 } from 'lucide-react';
 import './styles.css';
 
@@ -72,14 +72,12 @@ const pageMeta = {
   drive: { title: 'Drive', eyebrow: 'FILES & FOLDERS', description: 'Manage documents and everything outside your media libraries.' },
   music: { title: 'Music', eyebrow: 'AUDIO LIBRARY', description: 'Upload, organize, and play music from your server.' },
   movies: { title: 'Movies', eyebrow: 'VIDEO LIBRARY', description: 'Keep your films and shows ready to stream.' },
-  favorites: { title: 'Favorites', eyebrow: 'QUICK ACCESS', description: 'Your starred items, shared with the mobile apps.' },
 };
 
 function App() {
   const [section, setSection] = useState('overview');
   const [items, setItems] = useState([]);
   const [folders, setFolders] = useState([]);
-  const [favorites, setFavorites] = useState([]);
   const [playlists, setPlaylists] = useState([]);
   const [playlistContents, setPlaylistContents] = useState([]);
   const [activePlaylist, setActivePlaylist] = useState('');
@@ -111,7 +109,7 @@ function App() {
   const [uploadLookupMessage, setUploadLookupMessage] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [creditsOpen, setCreditsOpen] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem('orbit-theme') || 'dark');
   const [tokenDraft, setTokenDraft] = useState(getToken());
   const [apiUrlDraft, setApiUrlDraft] = useState(getApiBaseUrl());
 
@@ -119,10 +117,10 @@ function App() {
     if (quiet) setRefreshing(true); else setBusy(true);
     setError('');
     try {
-      const [nextItems, nextFolders, nextFavorites, nextStats, nextPlaylists] = await Promise.all([
-        api('/api/library'), api('/api/folders'), api('/api/favorites'), api('/api/stats'), api('/api/playlists'),
+      const [nextItems, nextFolders, nextStats, nextPlaylists] = await Promise.all([
+        api('/api/library'), api('/api/folders'), api('/api/stats'), api('/api/playlists'),
       ]);
-      setItems(nextItems); setFolders(nextFolders); setFavorites(nextFavorites); setStats(nextStats); setPlaylists(nextPlaylists);
+      setItems(nextItems); setFolders(nextFolders); setStats(nextStats); setPlaylists(nextPlaylists);
       if (section === 'overview') {
         const log = await api('/api/audit?limit=8').catch(() => []);
         setAudit(log);
@@ -133,6 +131,10 @@ function App() {
   }, [section]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('orbit-theme', theme);
+  }, [theme]);
   useEffect(() => {
     setFolderId(null); setFolderTrail([]); setQuery(''); setSearchItems(null); setActivePlaylist(''); setLanguageFilter(''); setGenreFilter(''); setMovieTypeFilter('all');
   }, [section]);
@@ -153,7 +155,6 @@ function App() {
   const currentUpload = uploadQueue[uploadIndex] || null;
   const driveFiles = useMemo(() => items.filter(item => item.kind === 'file'), [items]);
   const sectionItems = useMemo(() => {
-    if (section === 'favorites') return favorites;
     const kind = section === 'music' ? 'music' : section === 'movies' ? 'movie' : 'file';
     const source = searchItems || items;
     let filtered = source.filter(item => (section === 'drive' ? item.kind === 'file' : item.kind === kind) && (section !== 'drive' || (item.folder_id ?? null) === folderId));
@@ -162,13 +163,12 @@ function App() {
     if (languageFilter) filtered = filtered.filter(item => item.language === languageFilter);
     if (genreFilter) filtered = filtered.filter(item => item.genre === genreFilter);
     return filtered;
-  }, [activePlaylist, favorites, folderId, genreFilter, items, languageFilter, movieTypeFilter, playlistContents, searchItems, section]);
+  }, [activePlaylist, folderId, genreFilter, items, languageFilter, movieTypeFilter, playlistContents, searchItems, section]);
   const visibleItems = useMemo(() => {
     const matched = sectionItems.filter(item => !query.trim() || searchItems || `${item.name} ${item.title || ''} ${item.artist || ''} ${item.album || ''}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
     return [...matched].sort((a, b) => sort === 'name' ? (a.title || a.name).localeCompare(b.title || b.name) : sort === 'size' ? (b.size || 0) - (a.size || 0) : String(b.created_at || '').localeCompare(String(a.created_at || '')));
   }, [query, searchItems, sectionItems, sort]);
   const visibleFolders = section === 'drive' ? folders.filter(folder => folder.parent_id === folderId && (!query.trim() || folder.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))) : [];
-  const favoriteIds = useMemo(() => new Set(favorites.map(item => item.id)), [favorites]);
   const languages = useMemo(() => [...new Set(items.filter(item => section === 'music' ? item.kind === 'music' : item.kind === 'movie').map(item => item.language).filter(Boolean))].sort(), [items, section]);
   const genres = useMemo(() => [...new Set(items.filter(item => section === 'music' ? item.kind === 'music' : item.kind === 'movie').map(item => item.genre).filter(Boolean))].sort(), [items, section]);
   const categoryCounts = useMemo(() => ({
@@ -325,13 +325,6 @@ function App() {
       flash(`${label[0].toUpperCase()}${label.slice(1)} deleted.`); await load({ quiet: true });
     } catch (cause) { setError(cause.message || `Could not delete ${label}.`); }
   }
-  async function toggleFavorite(item) {
-    const liked = favoriteIds.has(item.id);
-    try {
-      await api(`/api/favorites/${item.id}`, { method: liked ? 'DELETE' : 'POST' });
-      setFavorites(previous => liked ? previous.filter(fav => fav.id !== item.id) : [item, ...previous]);
-    } catch (cause) { setError(cause.message || 'Favorite update failed.'); }
-  }
   async function choosePlaylist(id) {
     setActivePlaylist(id);
     if (!id) { setPlaylistContents([]); return; }
@@ -398,7 +391,7 @@ function App() {
   const meta = pageMeta[section];
   const libraryTitle = section === 'drive' && currentFolder ? currentFolder.name : meta.title;
 
-  return <div className="app-shell">
+  return <div className="app-shell" data-theme={theme}>
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark"><Cloud size={19} /></span><span>orbit<span className="brand-light">nas</span></span></div>
       <p className="workspace-label">LIBRARY</p>
@@ -407,12 +400,11 @@ function App() {
         <NavButton active={section === 'drive'} onClick={() => navigate('drive')} icon={<HardDrive size={18} />} label="Drive" count={categoryCounts.drive} />
         <NavButton active={section === 'music'} onClick={() => navigate('music')} icon={<AudioLines size={18} />} label="Music" count={categoryCounts.music} />
         <NavButton active={section === 'movies'} onClick={() => navigate('movies')} icon={<Film size={18} />} label="Movies" count={categoryCounts.movies} />
-        <NavButton active={section === 'favorites'} onClick={() => navigate('favorites')} icon={<Heart size={18} />} label="Favorites" count={favorites.length} />
       </nav>
       <div className="sidebar-bottom">
         <div className="sidebar-server"><span className="server-pulse" /><div><strong>NAS connected</strong><small>Private server</small></div></div>
+        <button className="settings-link" onClick={() => setTheme(value => value === 'dark' ? 'light' : 'dark')}><span className="theme-switch-icon">{theme === 'dark' ? <Sun size={17}/> : <Moon size={17}/>}</span>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</button>
         <button className="settings-link" onClick={() => { setTokenDraft(getToken()); setApiUrlDraft(getApiBaseUrl()); setSettingsOpen(true); }}><Settings2 size={17} /> Connection settings</button>
-        <button className="settings-link" onClick={() => setCreditsOpen(true)}>About &amp; credits</button>
         <div className="sidebar-foot"><ShieldCheck size={16} /><span>Files stay on your network</span></div>
       </div>
     </aside>
@@ -445,10 +437,10 @@ function App() {
           {folderTrail.map((folder, index) => <React.Fragment key={folder.id}><ChevronRight size={14} /><button className={index === folderTrail.length - 1 ? 'crumb-current' : ''} onClick={() => goToTrail(index)} onDragOver={allowDriveDrop} onDragLeave={leaveDriveDrop} onDrop={event => void dropDriveItem(event, folder.id)}>{folder.name}</button></React.Fragment>)}
         </div>}
         {uploadProgress && <div className="upload-status"><LoaderCircle size={16} className="spin" />{uploadProgress}<span className="progress-track" role="progressbar" aria-label="Upload progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.floor(uploadPercent)}><span style={{ width: `${uploadPercent}%` }} /></span></div>}
-        <div className="section-heading"><div><p className="eyebrow">{section === 'drive' ? 'YOUR FILES' : section === 'favorites' ? 'SAVED ITEMS' : 'LIBRARY CONTENT'}</p><h2>{visibleItems.length + visibleFolders.length} items</h2></div><span className="view-note">{section === 'drive' ? 'Drag files or folders onto a folder to move them' : 'Synced with mobile apps'}</span></div>
+        <div className="section-heading"><div><p className="eyebrow">{section === 'drive' ? 'YOUR FILES' : 'LIBRARY CONTENT'}</p><h2>{visibleItems.length + visibleFolders.length} items</h2></div><span className="view-note">{section === 'drive' ? 'Drag files or folders onto a folder to move them' : 'Synced with mobile apps'}</span></div>
         <div className={`library-grid ${section === 'drive' && driveLayout === 'list' ? 'list-layout' : ''}`}>
           {visibleFolders.map(folder => <FolderCard key={`folder-${folder.id}`} folder={folder} folders={folders} items={driveFiles} draggable={section === 'drive'} onDragStart={event => beginDriveDrag(event, 'folder', folder)} onDragOver={allowDriveDrop} onDragLeave={leaveDriveDrop} onDrop={event => void dropDriveItem(event, folder.id)} onOpen={openFolder} onEdit={() => editTarget(folder, 'folder')} onDelete={() => void removeTarget(folder, 'folder')} />)}
-          {visibleItems.map(item => <MediaCard key={item.id} item={item} liked={favoriteIds.has(item.id)} draggable={section === 'drive'} onDragStart={event => beginDriveDrag(event, 'file', item)} onOpen={() => setSelected(item)} onEdit={() => editTarget(item, 'media')} onDelete={() => void removeTarget(item, 'media')} onFavorite={() => void toggleFavorite(item)} onPlaylist={section === 'music' ? () => { if (activePlaylist) void playlistAction('remove-track', null, item); else if (playlists.length === 1) void playlistAction('add-track', playlists[0], item); else { setPlaylistChoice(String(playlists[0]?.id || '')); setPlaylistPicker(item); } } : null} playlistMode={Boolean(activePlaylist)} onDownload={section === 'drive' ? () => window.open(playbackUrl(item), '_blank', 'noopener') : null} />)}
+          {visibleItems.map(item => <MediaCard key={item.id} item={item} draggable={section === 'drive'} onDragStart={event => beginDriveDrag(event, 'file', item)} onOpen={() => setSelected(item)} onEdit={() => editTarget(item, 'media')} onDelete={() => void removeTarget(item, 'media')} onPlaylist={section === 'music' ? () => { if (activePlaylist) void playlistAction('remove-track', null, item); else if (playlists.length === 1) void playlistAction('add-track', playlists[0], item); else { setPlaylistChoice(String(playlists[0]?.id || '')); setPlaylistPicker(item); } } : null} playlistMode={Boolean(activePlaylist)} onDownload={section === 'drive' ? () => window.open(playbackUrl(item), '_blank', 'noopener') : null} />)}
           {!visibleItems.length && !visibleFolders.length && <EmptyState title={query ? 'No matching items' : `No ${meta.title.toLowerCase()} here yet`} detail={query ? 'Try another search term.' : 'Upload something to get started. Your files will appear in the mobile apps too.'} />}
         </div>
       </>}
@@ -462,7 +454,6 @@ function App() {
     {dialog && <EditDialog kind={dialog.kind} isVideo={dialog.target?.kind === 'movie'} form={form} setForm={setForm} folders={folders} onClose={() => setDialog(null)} onSave={saveDialog} />}
     {playlistPicker && <Modal title="Add to playlist" onClose={() => setPlaylistPicker(null)}><div className="playlist-picker"><p>Add <strong>{playlistPicker.title || playlistPicker.name}</strong> to a music playlist.</p><label>Playlist<select value={playlistChoice} onChange={event => setPlaylistChoice(event.target.value)}><option value="" disabled>Select a playlist</option>{playlists.map(playlist => <option key={playlist.id} value={playlist.id}>{playlist.name}</option>)}</select></label><div className="dialog-actions"><button className="button button-light" onClick={() => setPlaylistPicker(null)}>Cancel</button><button className="button button-dark" onClick={() => void playlistAction('add-track', null, playlistPicker)}><ListMusic size={15}/>Add track</button></div></div></Modal>}
     {settingsOpen && <Modal title="Connection settings" onClose={() => setSettingsOpen(false)}><form onSubmit={saveToken} className="settings-form"><p>Set the NAS API address and the same auth string as <code>API_TOKEN</code> in the server environment. These values are saved only in this browser.</p><label>API server URL<input type="url" placeholder="Leave blank to use this site's /api proxy" value={apiUrlDraft} onChange={event => setApiUrlDraft(event.target.value)} autoComplete="url" /></label><label>Auth string (API token)<input type="password" value={tokenDraft} onChange={event => setTokenDraft(event.target.value)} autoComplete="current-password" /></label><div className="dialog-actions"><button type="button" className="button button-light" onClick={() => setSettingsOpen(false)}>Cancel</button><button className="button button-dark">Save and reconnect</button></div></form></Modal>}
-    {creditsOpen && <Modal title="About & credits" onClose={() => setCreditsOpen(false)}><div className="credits-content"><p>Movie and show metadata is provided by <a href="https://www.omdbapi.com/" target="_blank" rel="noreferrer">OMDb API</a>.</p></div></Modal>}
   </div>;
 }
 
@@ -478,76 +469,72 @@ function Overview({ stats, items, folders, audit, onNavigate, onAdmin, busy }) {
   const totalBytes = Number(stats?.total_bytes || 0);
   const freeBytes = Number(stats?.free_bytes || 0);
   const usedBytes = Math.max(0, totalBytes - freeBytes);
+  const catalogBytes = Number(stats?.bytes || 0);
   const usage = totalBytes ? Math.min(100, usedBytes / totalBytes * 100) : 0;
-  const musicCount = items.filter(item => item.kind === 'music').length;
-  const movieCount = items.filter(item => item.kind === 'movie').length;
-  const fileCount = items.filter(item => item.kind === 'file').length;
+  const gib = value => `${(Number(value || 0) / 1024 ** 3).toFixed(2)} GiB`;
+  const tib = value => `${(Number(value || 0) / 1024 ** 4).toFixed(2)} TiB`;
   const formatCount = value => Number(value || 0).toLocaleString();
+  const groups = [
+    { label: 'Drive', kind: 'file', color: 'blue' },
+    { label: 'Music', kind: 'music', color: 'slate' },
+    { label: 'Movies', kind: 'movie', color: 'violet' },
+  ].map(group => {
+    const groupItems = items.filter(item => item.kind === group.kind);
+    return { ...group, count: groupItems.length, size: groupItems.reduce((sum, item) => sum + Number(item.size || 0), 0) };
+  });
+  const countRows = groups.map(group => ({ label: group.label, value: group.count, color: group.color }));
+  const sizeRows = groups.map(group => ({ label: group.label, value: group.size, color: group.color }));
+  const catalogShare = totalBytes ? Math.min(100, catalogBytes / totalBytes * 100) : 0;
   return <div className="ops-overview">
     <section className="ops-summary">
       <div className="ops-summary-copy">
         <span className="ops-kicker">SYSTEM SUMMARY</span>
         <h2>NAS overview</h2>
-        <p>Storage and library status from the connected server.</p>
+        <p>Live catalog and filesystem figures from the connected server.</p>
       </div>
       <div className="ops-summary-state"><span className="ops-state-dot"/><span>API responding</span></div>
     </section>
 
     <section className="ops-metrics" aria-label="Storage and library metrics">
-      <article className="ops-metric">
-        <span className="ops-metric-label">CATALOGUED ITEMS</span>
-        <strong>{stats ? formatCount(stats.items) : '—'}</strong>
-        <small>{formatCount(folders.length)} folders indexed</small>
-      </article>
-      <article className="ops-metric">
-        <span className="ops-metric-label">LIBRARY SIZE</span>
-        <strong>{stats ? bytes(stats.bytes) : '—'}</strong>
-        <small>Files recorded in the catalog</small>
-      </article>
-      <article className="ops-metric">
-        <span className="ops-metric-label">SPACE USED</span>
-        <strong>{stats ? bytes(usedBytes) : '—'}</strong>
-        <small>{stats ? `${usage.toFixed(1)}% of filesystem capacity` : 'Filesystem usage'}</small>
-      </article>
-      <article className="ops-metric">
-        <span className="ops-metric-label">SPACE AVAILABLE</span>
-        <strong>{stats ? bytes(freeBytes) : '—'}</strong>
-        <small>{stats ? `${bytes(totalBytes)} total capacity` : 'Filesystem capacity'}</small>
-      </article>
+      <Metric label="CATALOGUED ITEMS" value={formatCount(stats?.items)} detail={`${formatCount(folders.length)} folders · ${formatCount(items.length)} indexed records`} />
+      <Metric label="CATALOG SIZE" value={gib(catalogBytes)} detail={`${tib(catalogBytes)} · media catalog only`} />
+      <Metric label="FILESYSTEM USED" value={gib(usedBytes)} detail={`${usage.toFixed(1)}% of total capacity`} />
+      <Metric label="AVAILABLE SPACE" value={gib(freeBytes)} detail={`${tib(totalBytes)} total filesystem capacity`} />
     </section>
 
-    <div className="ops-main-grid">
-      <section className="ops-panel ops-storage-panel">
-        <div className="ops-panel-heading">
-          <div><span className="ops-kicker">FILESYSTEM</span><h3>Storage capacity</h3></div>
-          <span className="ops-panel-value">{stats ? `${usage.toFixed(1)}% used` : 'Waiting for stats'}</span>
-        </div>
-        <div className="ops-storage-bar" role="progressbar" aria-label="Filesystem space used" aria-valuemin={0} aria-valuemax={100} aria-valuenow={stats ? Math.round(usage) : 0}>
-          <span style={{ width: `${stats ? usage : 0}%` }}/>
-        </div>
-        <div className="ops-storage-legend">
-          <span><i className="ops-legend-used"/>Used <strong>{stats ? bytes(usedBytes) : '—'}</strong></span>
-          <span><i className="ops-legend-free"/>Available <strong>{stats ? bytes(freeBytes) : '—'}</strong></span>
-        </div>
-        <p className="ops-footnote">Capacity is reported for the filesystem containing the NAS media directory. This is not a per-disk SMART or RAID health check.</p>
-      </section>
+    <section className="ops-panel ops-capacity-panel">
+      <div className="ops-panel-heading">
+        <div><span className="ops-kicker">FILESYSTEM CAPACITY</span><h3>Storage utilization</h3></div>
+        <span className="ops-panel-value">{stats ? `${usage.toFixed(1)}% used` : 'Waiting for stats'}</span>
+      </div>
+      <div className="ops-storage-bar" role="progressbar" aria-label="Filesystem space used" aria-valuemin={0} aria-valuemax={100} aria-valuenow={stats ? Math.round(usage) : 0}>
+        <span style={{ width: `${stats ? usage : 0}%` }}/>
+      </div>
+      <div className="ops-storage-legend">
+        <span><i className="ops-legend-used"/>Used <strong>{gib(usedBytes)}</strong></span>
+        <span><i className="ops-legend-free"/>Available <strong>{gib(freeBytes)}</strong></span>
+        <span><i className="ops-legend-catalog"/>Catalogued <strong>{gib(catalogBytes)}</strong></span>
+      </div>
+      <div className="ops-capacity-details">
+        <div><small>Filesystem total</small><strong>{gib(totalBytes)}</strong></div>
+        <div><small>Catalog / filesystem</small><strong>{catalogShare.toFixed(2)}%</strong></div>
+        <div><small>Uncatalogued used space</small><strong>{gib(Math.max(0, usedBytes - catalogBytes))}</strong></div>
+      </div>
+      <p className="ops-footnote">Filesystem usage comes from the NAS media directory's underlying filesystem. Catalog size is calculated from indexed media records and can differ from actual disk usage.</p>
+    </section>
 
+    <div className="ops-chart-grid">
+      <BarChart title="Items by library" kicker="CONTENT DISTRIBUTION" rows={countRows} format={formatCount} unit="items" empty="No indexed items yet" />
+      <BarChart title="Catalog size by library" kicker="INDEXED MEDIA SIZE" rows={sizeRows} format={gib} unit="GiB" empty="No catalogued media sizes yet" />
+    </div>
+
+    <div className="ops-main-grid">
       <section className="ops-panel">
         <div className="ops-panel-heading"><div><span className="ops-kicker">LIBRARY BREAKDOWN</span><h3>Indexed content</h3></div></div>
         <div className="ops-breakdown">
-          <button onClick={() => onNavigate('drive')}><span className="ops-breakdown-icon file"><HardDrive size={17}/></span><span>Drive files</span><strong>{formatCount(fileCount)}</strong><ChevronRight size={15}/></button>
-          <button onClick={() => onNavigate('music')}><span className="ops-breakdown-icon music"><AudioLines size={17}/></span><span>Music tracks</span><strong>{formatCount(musicCount)}</strong><ChevronRight size={15}/></button>
-          <button onClick={() => onNavigate('movies')}><span className="ops-breakdown-icon movies"><Film size={17}/></span><span>Movies &amp; shows</span><strong>{formatCount(movieCount)}</strong><ChevronRight size={15}/></button>
-        </div>
-      </section>
-    </div>
-
-    <div className="ops-lower-grid">
-      <section className="ops-panel">
-        <div className="ops-panel-heading"><div><span className="ops-kicker">MAINTENANCE</span><h3>Server operations</h3></div></div>
-        <div className="ops-tools">
-          <button onClick={() => onAdmin('scan')} disabled={busy}><span className="ops-tool-icon"><RefreshCw size={17}/></span><span><strong>Scan media directory</strong><small>Index files added outside the apps</small></span><ChevronRight size={15}/></button>
-          <button onClick={() => onAdmin('backup')} disabled={busy}><span className="ops-tool-icon"><Database size={17}/></span><span><strong>Back up catalog database</strong><small>Create a SQLite database snapshot</small></span><ChevronRight size={15}/></button>
+          <button onClick={() => onNavigate('drive')}><span className="ops-breakdown-icon file"><HardDrive size={17}/></span><span>Drive files</span><strong>{formatCount(groups[0].count)}</strong><ChevronRight size={15}/></button>
+          <button onClick={() => onNavigate('music')}><span className="ops-breakdown-icon music"><AudioLines size={17}/></span><span>Music tracks</span><strong>{formatCount(groups[1].count)}</strong><ChevronRight size={15}/></button>
+          <button onClick={() => onNavigate('movies')}><span className="ops-breakdown-icon movies"><Film size={17}/></span><span>Movies &amp; shows</span><strong>{formatCount(groups[2].count)}</strong><ChevronRight size={15}/></button>
         </div>
       </section>
       <section className="ops-panel">
@@ -555,8 +542,31 @@ function Overview({ stats, items, folders, audit, onNavigate, onAdmin, busy }) {
         {audit.length ? <div className="ops-activity">{audit.map(event => <div className="ops-activity-row" key={event.id}><span className="ops-activity-mark"/><span><strong>{String(event.action).replaceAll('.', ' ')}</strong><small>{event.subject}</small></span><time>{dateLabel(event.created_at)}</time></div>)}</div> : <p className="ops-empty">No recorded activity yet.</p>}
       </section>
     </div>
-    <p className="ops-data-note">CPU, memory, network, per-device SMART, and container diagnostics are not exposed by the current API. They are intentionally omitted until server-side monitoring is implemented.</p>
+
+    <section className="ops-panel">
+      <div className="ops-panel-heading"><div><span className="ops-kicker">MAINTENANCE</span><h3>Server operations</h3></div></div>
+      <div className="ops-tools">
+        <button onClick={() => onAdmin('scan')} disabled={busy}><span className="ops-tool-icon"><RefreshCw size={17}/></span><span><strong>Scan media directory</strong><small>Index files added outside the apps</small></span><ChevronRight size={15}/></button>
+        <button onClick={() => onAdmin('backup')} disabled={busy}><span className="ops-tool-icon"><Database size={17}/></span><span><strong>Back up catalog database</strong><small>Create a SQLite database snapshot</small></span><ChevronRight size={15}/></button>
+      </div>
+    </section>
+    <p className="ops-data-note">CPU, memory, network throughput, disk SMART, and container metrics are not yet exposed by the current API. These charts use indexed media records and filesystem measurements only.</p>
   </div>;
+}
+
+function Metric({ label, value, detail }) {
+  return <article className="ops-metric"><span className="ops-metric-label">{label}</span><strong>{value}</strong><small>{detail}</small></article>;
+}
+
+function BarChart({ title, kicker, rows, format, unit, empty }) {
+  const max = Math.max(0, ...rows.map(row => row.value));
+  return <section className="ops-panel ops-chart-panel">
+    <div className="ops-panel-heading"><div><span className="ops-kicker">{kicker}</span><h3>{title}</h3></div><span className="ops-panel-value">{unit}</span></div>
+    {max > 0 ? <div className="ops-chart-bars">{rows.map(row => <div className="ops-chart-row" key={row.label}>
+      <div className="ops-chart-label"><span>{row.label}</span><strong>{format(row.value)}</strong></div>
+      <div className="ops-chart-track"><span className={`ops-chart-fill ${row.color}`} style={{ width: `${Math.max(1, row.value / max * 100)}%` }}/></div>
+    </div>)}</div> : <p className="ops-empty">{empty}</p>}
+  </section>;
 }
 
 function StatCard({ icon, label, value, detail, tone }) {
@@ -573,7 +583,7 @@ function FolderCard({ folder, folders, items, onOpen, onEdit, onDelete, draggabl
   </article>;
 }
 
-function MediaCard({ item, liked, onOpen, onEdit, onDelete, onFavorite, onPlaylist, playlistMode, onDownload, draggable = false, onDragStart }) {
+function MediaCard({ item, onOpen, onEdit, onDelete, onPlaylist, playlistMode, onDownload, draggable = false, onDragStart }) {
   const kindLabel = item.kind === 'music' ? 'MUSIC' : item.kind === 'movie' ? item.media_type === 'show' ? 'TV SHOW' : 'MOVIE' : extension(item.name);
   const artwork = item.artwork_url || (item.artwork_path ? apiUrl(`/api/artwork/${item.id}`) : null);
   const ArtIcon = item.kind === 'music' ? FileAudio : item.kind === 'movie' ? FileVideo : /\.(png|jpe?g|gif|webp|heic)$/i.test(item.name) ? FileImage : File;
@@ -583,7 +593,7 @@ function MediaCard({ item, liked, onOpen, onEdit, onDelete, onFavorite, onPlayli
       <ArtIcon size={37}/><span>{kindLabel}</span>
     </div>
     <div className="asset-info"><strong title={item.name}>{item.title || item.name}</strong><small>{item.kind === 'music' ? [item.artist, item.album].filter(Boolean).join(' · ') || item.name : item.kind === 'movie' ? [item.media_type === 'show' ? 'TV show' : 'Movie', item.language, item.genre].filter(Boolean).join(' · ') : item.name}{item.size ? ` · ${bytes(item.size)}` : ''}</small></div>
-  </button><button className={`favorite-action ${liked ? 'liked' : ''}`} title={liked ? 'Remove from favorites' : 'Add to favorites'} onClick={onFavorite}><Heart size={16} fill={liked ? 'currentColor' : 'none'}/></button><CardMenu onEdit={onEdit} onDelete={onDelete} onPlaylist={onPlaylist} playlistMode={playlistMode} onDownload={onDownload} /></article>;
+  </button><CardMenu onEdit={onEdit} onDelete={onDelete} onPlaylist={onPlaylist} playlistMode={playlistMode} onDownload={onDownload} /></article>;
 }
 
 function CardMenu({ onEdit, onDelete, onPlaylist, playlistMode, onDownload }) {
