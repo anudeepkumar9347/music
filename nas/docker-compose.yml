@@ -26,6 +26,16 @@ services:
         max-file: "3"
     volumes:
       - ../data:/data
+      # Read-only host counters for accurate server monitoring. No host PID namespace or privileged mode.
+      - /proc/stat:/host/proc/stat:ro
+      - /proc/meminfo:/host/proc/meminfo:ro
+      - /proc/uptime:/host/proc/uptime:ro
+      - /proc/loadavg:/host/proc/loadavg:ro
+      - /proc/diskstats:/host/proc/diskstats:ro
+      - /proc/net/dev:/host/proc/net/dev:ro
+      - /sys/class/thermal:/host/sys/class/thermal:ro
+      - /sys/class/hwmon:/host/sys/class/hwmon:ro
+      - /sys/class/block:/host/sys/class/block:ro
     restart: unless-stopped
 
   # Enable after placing a real hostname in Caddyfile and DNS pointing to this laptop.
