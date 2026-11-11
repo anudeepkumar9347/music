@@ -49,7 +49,7 @@ docker compose up -d --build api web
 
 ## Automatic metadata and artwork
 
-Music and Movies uploads open a metadata review form before the file is sent to the NAS. The form searches by filename and lets you review or edit the suggested fields, use the suggested cover/poster, or upload your own image. Multiple selected media files pass through the form one by one. The API also reads embedded media tags when the file arrives.
+Music uploads search the selected filenames and show the suggested title, artist, and album together so you can select the tracks to upload. Movie uploads open a metadata review form for each file, with suggestions you can review or edit, and allow choosing a poster or uploading your own image. The API also reads embedded media tags when a file arrives.
 
 It searches MusicBrainz for audio metadata and Cover Art Archive for album art without requiring credentials. If MusicBrainz returns no confident match, it falls back to Apple's public iTunes Search API for track, artist, album, release date, genre, and artwork. Optional AcoustID fingerprint matching improves recognition when a track has weak or missing tags; register an AcoustID application and set `ACOUSTID_APP_KEY` in `.env`.
 

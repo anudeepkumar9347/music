@@ -27,7 +27,7 @@ Copy `nas/.env.example` to `nas/.env` to see the server settings. Keep provider 
 ## Web workspaces
 
 - **Drive** browses all files and folders, with folder creation, moving, renaming, deletion, previews, search, and uploads.
-- **Music** filters audio items and supports playback, favorites, and metadata editing. Upload opens a review form with suggested title, artist, album, language, genre, date, and cover art before the file is sent.
+- **Music** filters audio items and supports playback, favorites, and metadata editing. Selecting multiple songs searches each filename, shows the suggested title, artist, and album together, and lets you choose which tracks to upload.
 - **Movies** filters video items and supports playback, favorites, and movie or TV-show classification. Upload opens the same review flow with a synopsis, language, genre, date, and poster fields; multiple selections move through the form one file at a time.
 - **Overview** shows disk usage and catalog counts, and provides library scan, database backup, and recent activity tools.
 

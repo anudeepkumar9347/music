@@ -111,6 +111,10 @@ function App() {
   const [uploadLookupBusy, setUploadLookupBusy] = useState(false);
   const [uploadLookupMessage, setUploadLookupMessage] = useState('');
   const [uploadError, setUploadError] = useState('');
+  const [musicBatch, setMusicBatch] = useState(null);
+  const [musicBatchBusy, setMusicBatchBusy] = useState(false);
+  const [musicBatchProgress, setMusicBatchProgress] = useState('');
+  const [musicBatchPercent, setMusicBatchPercent] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('orbit-theme') || 'dark');
@@ -246,8 +250,95 @@ function App() {
     event.target.value = '';
     if (!files.length) return;
     const kind = section === 'music' ? 'music' : 'movie';
+    if (kind === 'music') {
+      const entries = files.map(file => ({
+        file,
+        metadata: blankUploadMetadata(file, kind),
+        selected: true,
+        status: 'searching',
+      }));
+      setMusicBatch(entries);
+      setMusicBatchBusy(false);
+      setMusicBatchProgress('');
+      setMusicBatchPercent(0);
+      setUploadError('');
+      void (async () => {
+        for (let index = 0; index < files.length; index += 1) {
+          const file = files[index];
+          try {
+            const found = await api(`/api/metadata/lookup?kind=music&filename=${encodeURIComponent(file.name)}`);
+            setMusicBatch(current => current?.map(entry => entry.file === file ? {
+              ...entry,
+              metadata: { ...entry.metadata, ...found, name: file.name, title: found.title || entry.metadata.title },
+              status: found.matched ? 'ready' : 'no-match',
+            }) ?? null);
+          } catch {
+            setMusicBatch(current => current?.map(entry => entry.file === file
+              ? { ...entry, status: 'lookup-error' }
+              : entry) ?? null);
+          }
+        }
+      })();
+      return;
+    }
     setUploadQueue(files); setUploadIndex(0); setUploadForm(blankUploadMetadata(files[0], kind)); setUploadLookupMessage('');
     void lookupUpload(files[0], kind);
+  }
+  async function submitMusicBatch(event) {
+    event.preventDefault();
+    if (!musicBatch || musicBatchBusy) return;
+    const pending = musicBatch.filter(entry => entry.selected && entry.status !== 'uploaded');
+    if (!pending.length) return;
+    setMusicBatchBusy(true);
+    setUploadError('');
+    let completed = 0;
+    let failed = 0;
+    try {
+      for (const entry of pending) {
+        setMusicBatch(current => current?.map(item => item.file === entry.file ? { ...item, status: 'uploading', error: '' } : item) ?? null);
+        const data = new FormData();
+        data.append('file', entry.file);
+        data.append('metadata_confirmed', 'true');
+        for (const key of ['title', 'artist', 'album', 'language', 'genre', 'description', 'release_date', 'media_type', 'external_id', 'metadata_provider', 'artwork_url']) {
+          const value = entry.metadata[key];
+          if (value !== undefined && value !== null) data.append(key, String(value));
+        }
+        data.append('edited_fields', JSON.stringify(entry.metadata.edited_fields || []));
+        const uploadLabel = `Uploading ${completed + 1} of ${pending.length}: ${entry.file.name}`;
+        setMusicBatchProgress(`${uploadLabel} · 0%`);
+        setMusicBatchPercent(0);
+        try {
+          await uploadWithProgress('/api/upload', data, (percent, sent = false) => {
+            setMusicBatchPercent(percent);
+            setMusicBatchProgress(sent ? `Sent ${entry.file.name} · waiting for the NAS to index it…` : `${uploadLabel} · ${Math.floor(percent)}%`);
+          });
+          completed += 1;
+          setMusicBatch(current => current?.map(item => item.file === entry.file ? { ...item, status: 'uploaded' } : item) ?? null);
+        } catch (cause) {
+          failed += 1;
+          setMusicBatch(current => current?.map(item => item.file === entry.file
+            ? { ...item, status: 'failed', error: cause.message || 'Upload failed.' }
+            : item) ?? null);
+        }
+      }
+      if (failed) {
+        setUploadError(`${completed} uploaded; ${failed} failed. Retry the failed tracks or adjust your selection.`);
+      } else {
+        const skipped = musicBatch.filter(entry => !entry.selected).length;
+        flash(`${completed} song${completed === 1 ? '' : 's'} uploaded${skipped ? `; ${skipped} skipped` : ''}.`);
+        setMusicBatch(null);
+      }
+      if (completed) await load({ quiet: true });
+    } finally {
+      setMusicBatchBusy(false);
+      setMusicBatchProgress('');
+      setMusicBatchPercent(0);
+    }
+  }
+  function cancelMusicBatch() {
+    if (musicBatchBusy) return;
+    setMusicBatch(null);
+    setUploadError('');
   }
   async function submitMediaUpload(event) {
     event.preventDefault();
@@ -471,6 +562,7 @@ function App() {
     </main>
 
     {selected && <MediaPlayer item={selected} url={playbackUrl(selected)} onClose={() => setSelected(null)} onEdit={() => editTarget(selected, 'media')} onDelete={() => void removeTarget(selected, 'media')} />}
+    {musicBatch && <MusicUploadBatchDialog entries={musicBatch} busy={musicBatchBusy} progress={musicBatchProgress} percent={musicBatchPercent} error={uploadError} onToggle={file => setMusicBatch(current => current?.map(entry => entry.file === file ? { ...entry, selected: !entry.selected } : entry) ?? null)} onSelectAll={selectedAll => setMusicBatch(current => current?.map(entry => entry.status === 'uploaded' ? entry : { ...entry, selected: selectedAll }) ?? null)} onClose={cancelMusicBatch} onSubmit={submitMusicBatch} />}
     {currentUpload && uploadForm && <UploadMetadataDialog kind={section === 'music' ? 'music' : 'movie'} file={currentUpload} index={uploadIndex} total={uploadQueue.length} form={uploadForm} setForm={setUploadForm} lookupBusy={uploadLookupBusy} lookupMessage={uploadLookupMessage} uploading={busy} uploadProgress={uploadProgress} uploadPercent={uploadPercent} uploadError={uploadError} onCancel={cancelMediaUpload} onSubmit={submitMediaUpload} />}
     {dialog && <EditDialog kind={dialog.kind} isVideo={dialog.target?.kind === 'movie'} form={form} setForm={setForm} folders={folders} onClose={() => setDialog(null)} onSave={saveDialog} />}
     {playlistPicker && <Modal title="Add to playlist" onClose={() => setPlaylistPicker(null)}><div className="playlist-picker"><p>Add <strong>{playlistPicker.title || playlistPicker.name}</strong> to a music playlist.</p><label>Playlist<select value={playlistChoice} onChange={event => setPlaylistChoice(event.target.value)}><option value="" disabled>Select a playlist</option>{playlists.map(playlist => <option key={playlist.id} value={playlist.id}>{playlist.name}</option>)}</select></label><div className="dialog-actions"><button className="button button-light" onClick={() => setPlaylistPicker(null)}>Cancel</button><button className="button button-dark" onClick={() => void playlistAction('add-track', null, playlistPicker)}><ListMusic size={15}/>Add track</button></div></div></Modal>}
@@ -732,6 +824,47 @@ function UploadMetadataDialog({ kind, file, index, total, form, setForm, lookupB
         </section>
       </div>
       <div className="upload-dialog-footer"><span>{kind === 'music' ? 'This information syncs to Music and the NAS catalog.' : 'This information and poster sync to Movies and the NAS catalog.'}</span><div><button type="button" className="button button-light" onClick={onCancel} disabled={uploading}>Cancel</button><button className="button button-dark" disabled={lookupBusy || uploading}><Upload size={15}/>{uploading ? 'Uploading…' : index + 1 < total ? 'Save & next file' : 'Save & upload'}</button></div></div>
+    </form>
+  </Modal>;
+}
+
+function MusicUploadBatchDialog({ entries, busy, progress, percent, error, onToggle, onSelectAll, onClose, onSubmit }) {
+  const searching = entries.filter(entry => entry.status === 'searching').length;
+  const selectedCount = entries.filter(entry => entry.selected && entry.status !== 'uploaded').length;
+  const selectableCount = entries.filter(entry => entry.status !== 'uploaded').length;
+  const allSelected = selectableCount > 0 && entries.filter(entry => entry.status !== 'uploaded').every(entry => entry.selected);
+  return <Modal title={`Review music uploads · ${entries.length} track${entries.length === 1 ? '' : 's'}`} onClose={busy ? () => {} : onClose} className="music-batch-modal">
+    <form className="music-batch-content" onSubmit={onSubmit}>
+      <div className="music-batch-heading">
+        <p>{searching ? `Searching catalog… ${entries.length - searching} of ${entries.length} complete` : 'Review each catalog match, then choose which tracks to upload.'}</p>
+        <button type="button" className="subtle-action" onClick={() => onSelectAll(!allSelected)} disabled={busy || !selectableCount}>{allSelected ? 'Deselect all' : 'Select all'}</button>
+      </div>
+      <div className="music-batch-list">
+        {entries.map((entry, index) => {
+          const label = entry.metadata.title || entry.file.name;
+          const detail = [entry.metadata.artist, entry.metadata.album].filter(Boolean).join(' · ');
+          return <label className={`music-batch-item ${entry.status}`} key={`${index}-${entry.file.name}-${entry.file.lastModified}`}>
+            <input type="checkbox" checked={entry.selected} disabled={busy || entry.status === 'uploaded'} onChange={() => onToggle(entry.file)} />
+            <span className="music-batch-copy">
+              <strong title={label}>{label}</strong>
+              <small title={entry.file.name}>{detail || entry.file.name}</small>
+              <small className="music-batch-status">
+                {entry.status === 'searching' && 'Searching catalog…'}
+                {entry.status === 'ready' && `Match from ${entry.metadata.metadata_provider}`}
+                {entry.status === 'no-match' && 'No confident match; filename metadata will be used'}
+                {entry.status === 'lookup-error' && 'Catalog unavailable; filename metadata will be used'}
+                {entry.status === 'uploading' && 'Uploading…'}
+                {entry.status === 'uploaded' && 'Uploaded'}
+                {entry.status === 'failed' && (entry.error || 'Upload failed')}
+              </small>
+            </span>
+            <span className="music-batch-file-size">{bytes(entry.file.size)}</span>
+          </label>;
+        })}
+      </div>
+      {busy && <div className="dialog-upload-status" role="status"><div><LoaderCircle size={15} className="spin"/><span>{progress || 'Preparing uploads…'}</span></div><span className="progress-track" role="progressbar" aria-label="Current track upload progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.floor(percent)}><span style={{ width: `${percent}%` }} /></span></div>}
+      {error && !busy && <div className="dialog-upload-error" role="alert">{error}</div>}
+      <div className="upload-dialog-footer"><span>{selectedCount} selected to upload · {entries.filter(entry => entry.status === 'uploaded').length} already uploaded</span><div><button type="button" className="button button-light" onClick={onClose} disabled={busy}>Cancel</button><button type="submit" className="button button-dark" disabled={busy || searching > 0 || selectedCount === 0}><Upload size={15}/>{busy ? 'Uploading…' : searching ? `Searching ${entries.length - searching}/${entries.length}` : `Upload ${selectedCount} selected`}</button></div></div>
     </form>
   </Modal>;
 }

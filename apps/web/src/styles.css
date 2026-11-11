@@ -484,3 +484,13 @@ html[data-theme="dark"] .dialog-upload-status{border-color:#34434c;background:#2
 html[data-theme="dark"] .dialog-upload-status .progress-track{background:#37434a}
 html[data-theme="dark"] .dialog-upload-status .progress-track span{background:#a6c77e}
 html[data-theme="dark"] .dialog-upload-error{border-color:#583a3a;background:#342525;color:#f0aaa0}
+.music-batch-modal{width:min(720px,100%);max-height:calc(100vh - 36px);display:flex;flex-direction:column}.music-batch-modal>header{flex:none}.music-batch-content{min-height:0;display:grid;gap:12px;padding:14px 18px 18px}.music-batch-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}.music-batch-heading p{margin:0;color:#7a8376;font-size:10px}.music-batch-list{max-height:min(55vh,520px);overflow-y:auto;display:grid;gap:6px}.music-batch-item{min-width:0;display:flex;align-items:center;gap:10px;padding:10px;border:1px solid #e8ece3;border-radius:8px;background:#fff;cursor:pointer}.music-batch-item input{width:16px;height:16px;flex:none;accent-color:#435c45}.music-batch-copy{min-width:0;flex:1}.music-batch-copy strong,.music-batch-copy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.music-batch-copy strong{color:#343b32;font-size:10px;font-weight:650}.music-batch-copy small{margin-top:3px;color:#899186;font-size:9px}.music-batch-copy .music-batch-status{color:#728264}.music-batch-item.searching .music-batch-status,.music-batch-item.lookup-error .music-batch-status{color:#8b7960}.music-batch-item.failed .music-batch-status{color:#a85045}.music-batch-item.uploaded{opacity:.7;cursor:default}.music-batch-file-size{flex:none;color:#92998e;font-size:9px}.music-batch-modal .upload-dialog-footer{padding-top:10px}.music-batch-modal .upload-dialog-footer>span{max-width:none}.music-batch-modal .upload-dialog-footer>div{flex-wrap:wrap;justify-content:flex-end}
+html[data-theme="dark"] .music-batch-heading p{color:#98a5b4}
+html[data-theme="dark"] .music-batch-item{border-color:#303b47;background:#17211d}
+html[data-theme="dark"] .music-batch-copy strong{color:#e0e7ed}
+html[data-theme="dark"] .music-batch-copy small{color:#98a5b4}
+html[data-theme="dark"] .music-batch-copy .music-batch-status{color:#a8c18c}
+html[data-theme="dark"] .music-batch-item.searching .music-batch-status,html[data-theme="dark"] .music-batch-item.lookup-error .music-batch-status{color:#d0b38b}
+html[data-theme="dark"] .music-batch-item.failed .music-batch-status{color:#f0aaa0}
+html[data-theme="dark"] .music-batch-file-size{color:#8794a2}
+@media(max-width:620px){.music-batch-modal{max-height:calc(100vh - 20px)}.music-batch-content{padding:12px}.music-batch-list{max-height:45vh}.music-batch-heading{align-items:flex-start}}
