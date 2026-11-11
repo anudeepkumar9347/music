@@ -88,6 +88,8 @@ function App() {
   const [movieTypeFilter, setMovieTypeFilter] = useState('all');
   const [driveLayout, setDriveLayout] = useState('grid');
   const [stats, setStats] = useState(null);
+  const [systemMetrics, setSystemMetrics] = useState(null);
+  const [metricsRange, setMetricsRange] = useState(6);
   const [audit, setAudit] = useState([]);
   const [folderId, setFolderId] = useState(null);
   const [folderTrail, setFolderTrail] = useState([]);
@@ -131,6 +133,18 @@ function App() {
   }, [section]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (section !== 'overview') return undefined;
+    let active = true;
+    const refreshMetrics = () => {
+      api(`/api/system/metrics?range_hours=${metricsRange}`)
+        .then(result => { if (active) setSystemMetrics(result); })
+        .catch(() => { if (active) setSystemMetrics(null); });
+    };
+    refreshMetrics();
+    const timer = window.setInterval(refreshMetrics, 15000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [section, metricsRange]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('orbit-theme', theme);
@@ -420,7 +434,7 @@ function App() {
         </div>
       </header>
 
-      {section === 'overview' ? <Overview stats={stats} items={items} folders={folders} audit={audit} onNavigate={navigate} onAdmin={runAdminAction} busy={busy} /> : <>
+      {section === 'overview' ? <Overview stats={stats} items={items} folders={folders} audit={audit} systemMetrics={systemMetrics} metricsRange={metricsRange} onMetricsRange={setMetricsRange} onNavigate={navigate} onAdmin={runAdminAction} busy={busy} /> : <>
         <p className="page-description">{meta.description}</p>
         {section === 'movies' && <div className="metadata-credit"><span>Movie and show metadata provided by <a href="https://www.omdbapi.com/" target="_blank" rel="noreferrer">OMDb API</a>.</span></div>}
         <div className="toolbar">
@@ -466,7 +480,7 @@ function FilterSelect({ icon, label, value, options, onChange }) {
   return <label className="filter-select">{icon}<select value={value} onChange={event => onChange(event.target.value)} aria-label={`Filter by ${label.toLowerCase()}`}><option value="">All {label.toLowerCase()}s</option>{options.map(option => <option key={option} value={option}>{option}</option>)}</select></label>;
 }
 
-function Overview({ stats, items, folders, audit, onNavigate, onAdmin, busy }) {
+function Overview({ stats, items, folders, audit, systemMetrics, metricsRange, onMetricsRange, onNavigate, onAdmin, busy }) {
   const totalBytes = Number(stats?.total_bytes || 0);
   const freeBytes = Number(stats?.free_bytes || 0);
   const usedBytes = Math.max(0, totalBytes - freeBytes);
@@ -524,6 +538,28 @@ function Overview({ stats, items, folders, audit, onNavigate, onAdmin, busy }) {
       <p className="ops-footnote">Filesystem usage comes from the NAS media directory's underlying filesystem. Catalog size is calculated from indexed media records and can differ from actual disk usage.</p>
     </section>
 
+    <section className="ops-panel ops-system-panel">
+      <div className="ops-panel-heading ops-system-heading">
+        <div><span className="ops-kicker">HOST PERFORMANCE</span><h3>System monitoring</h3><small className="ops-system-subtitle">Live readings from the Ubuntu NAS host · sampled every 15 seconds</small></div>
+        <div className="ops-range-switch" role="group" aria-label="Chart time range">{[1, 6, 24].map(hours => <button key={hours} className={metricsRange === hours ? 'active' : ''} onClick={() => onMetricsRange(hours)}>{hours}h</button>)}</div>
+      </div>
+      {systemMetrics?.current ? <>
+        <div className="ops-system-summary">
+          <SystemValue label="CPU LOAD" value={systemMetrics.current.cpu_percent == null ? 'Sampling…' : `${systemMetrics.current.cpu_percent.toFixed(1)}%`} detail={`${systemMetrics.current.cpu_cores} logical cores`} />
+          <SystemValue label="MEMORY USED" value={systemMetrics.current.memory_percent == null ? 'Unavailable' : `${systemMetrics.current.memory_percent.toFixed(1)}%`} detail={`${gib(systemMetrics.current.memory_used_bytes)} / ${gib(systemMetrics.current.memory_total_bytes)}`} />
+          <SystemValue label="UPTIME" value={durationLabel(systemMetrics.current.uptime_seconds)} detail={`Load ${systemMetrics.current.load_1m.toFixed(2)} / ${systemMetrics.current.load_5m.toFixed(2)} / ${systemMetrics.current.load_15m.toFixed(2)}`} />
+          <SystemValue label="CPU TEMPERATURE" value={systemMetrics.current.cpu_temperature_c == null ? 'Unavailable' : `${systemMetrics.current.cpu_temperature_c.toFixed(1)} °C`} detail="Host thermal sensor" />
+        </div>
+        <div className="ops-system-chart-grid">
+          <LineChart title="CPU utilization" unit="%" points={systemMetrics.history} series={[{ key: 'cpu_percent', label: 'CPU', color: 'blue' }]} min={0} max={100} format={value => `${value.toFixed(1)}%`} />
+          <LineChart title="Memory utilization" unit="%" points={systemMetrics.history} series={[{ key: 'memory_percent', label: 'Memory', color: 'slate' }]} min={0} max={100} format={value => `${value.toFixed(1)}%`} />
+          <LineChart title="Network throughput" unit="MiB/s" points={systemMetrics.history} series={[{ key: 'network_rx_bytes_per_sec', label: 'Receive', color: 'blue', scale: 1024 ** 2 }, { key: 'network_tx_bytes_per_sec', label: 'Transmit', color: 'violet', scale: 1024 ** 2 }]} format={value => `${value.toFixed(2)} MiB/s`} />
+          <LineChart title="Disk I/O throughput" unit="MiB/s" points={systemMetrics.history} series={[{ key: 'disk_read_bytes_per_sec', label: 'Read', color: 'blue', scale: 1024 ** 2 }, { key: 'disk_write_bytes_per_sec', label: 'Write', color: 'slate', scale: 1024 ** 2 }]} format={value => `${value.toFixed(2)} MiB/s`} />
+        </div>
+        <div className="ops-system-footer"><span>{systemMetrics.history_count} samples in selected window</span><span>Interfaces: {systemMetrics.current.network_interfaces.join(', ') || 'not detected'}</span><span>Block devices: {systemMetrics.current.disk_devices.join(', ') || 'not detected'}</span></div>
+      </> : <div className="ops-monitoring-empty"><span className="ops-monitoring-pulse"/><strong>Waiting for host metrics</strong><small>First readings are collected when the API starts. Charts populate after the first sampling interval.</small></div>}
+    </section>
+
     <div className="ops-chart-grid">
       <BarChart title="Items by library" kicker="CONTENT DISTRIBUTION" rows={countRows} format={formatCount} unit="items" empty="No indexed items yet" />
       <BarChart title="Catalog size by library" kicker="INDEXED MEDIA SIZE" rows={sizeRows} format={gib} unit="GiB" empty="No catalogued media sizes yet" />
@@ -553,6 +589,45 @@ function Overview({ stats, items, folders, audit, onNavigate, onAdmin, busy }) {
     </section>
     <p className="ops-data-note">CPU, memory, network throughput, disk SMART, and container metrics are not yet exposed by the current API. These charts use indexed media records and filesystem measurements only.</p>
   </div>;
+}
+
+function SystemValue({ label, value, detail }) {
+  return <div className="ops-system-value"><span>{label}</span><strong>{value}</strong><small>{detail}</small></div>;
+}
+
+function durationLabel(seconds) {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  const days = Math.floor(total / 86400);
+  const hours = Math.floor((total % 86400) / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  return days ? `${days}d ${hours}h` : hours ? `${hours}h ${minutes}m` : `${minutes}m`;
+}
+
+function LineChart({ title, unit, points, series, min, max, format }) {
+  const width = 640, height = 160, padX = 8, padY = 12;
+  const values = points.flatMap(point => series.map(item => point[item.key] == null ? null : Number(point[item.key]) / (item.scale || 1))).filter(value => value != null && Number.isFinite(value));
+  const low = min ?? 0;
+  const high = max ?? Math.max(1, ...values) * 1.12;
+  const pathFor = item => points.map((point, index) => {
+    const raw = point[item.key];
+    if (raw == null || !Number.isFinite(Number(raw))) return null;
+    const value = Number(raw) / (item.scale || 1);
+    const x = padX + (points.length <= 1 ? 0 : index / (points.length - 1) * (width - padX * 2));
+    const y = height - padY - (Math.max(low, Math.min(high, value)) - low) / Math.max(0.000001, high - low) * (height - padY * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).filter(Boolean).join(' ');
+  const latest = series.map(item => ({ ...item, value: points.at(-1)?.[item.key] == null ? null : Number(points.at(-1)[item.key]) / (item.scale || 1) }));
+  return <section className="ops-chart-panel ops-line-chart">
+    <div className="ops-panel-heading"><div><h4>{title}</h4></div><span className="ops-panel-value">{unit}</span></div>
+    {values.length ? <>
+      <div className="ops-line-plot"><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title} preserveAspectRatio="none">
+        {[0, .5, 1].map(fraction => <line key={fraction} x1="0" x2={width} y1={padY + fraction * (height - padY * 2)} y2={padY + fraction * (height - padY * 2)} className="ops-chart-gridline" />)}
+        {series.map(item => <polyline key={item.key} points={pathFor(item)} className={`ops-line ${item.color}`} />)}
+      </svg></div>
+      <div className="ops-line-legend">{latest.map(item => <span key={item.key}><i className={item.color}/>{item.label}<strong>{item.value == null ? '—' : format(item.value)}</strong></span>)}</div>
+      <div className="ops-line-time"><span>{points[0]?.timestamp ? new Date(points[0].timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span><span>{points.at(-1)?.timestamp ? new Date(points.at(-1).timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span></div>
+    </> : <p className="ops-empty">Waiting for valid samples.</p>}
+  </section>;
 }
 
 function Metric({ label, value, detail }) {
