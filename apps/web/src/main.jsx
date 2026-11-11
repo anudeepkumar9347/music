@@ -481,13 +481,25 @@ function FilterSelect({ icon, label, value, options, onChange }) {
 }
 
 function Overview({ stats, items, folders, audit, systemMetrics, metricsRange, onMetricsRange, onNavigate, onAdmin, busy }) {
+  const [visible, setVisible] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('orbit-home-panels')) || ['cpu','temperature','network','load','disk','memory','storage','library','activity','maintenance']; }
+    catch { return ['cpu','temperature','network','load','disk','memory','storage','library','activity','maintenance']; }
+  });
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('orbit-home-collapsed')) || []; }
+    catch { return []; }
+  });
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+  useEffect(() => { localStorage.setItem('orbit-home-panels', JSON.stringify(visible)); }, [visible]);
+  useEffect(() => { localStorage.setItem('orbit-home-collapsed', JSON.stringify(collapsed)); }, [collapsed]);
+  const toggleVisible = id => setVisible(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id]);
+  const toggleCollapsed = id => setCollapsed(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id]);
   const totalBytes = Number(stats?.total_bytes || 0);
   const freeBytes = Number(stats?.free_bytes || 0);
   const usedBytes = Math.max(0, totalBytes - freeBytes);
   const catalogBytes = Number(stats?.bytes || 0);
   const usage = totalBytes ? Math.min(100, usedBytes / totalBytes * 100) : 0;
   const gib = value => `${(Number(value || 0) / 1024 ** 3).toFixed(2)} GiB`;
-  const tib = value => `${(Number(value || 0) / 1024 ** 4).toFixed(2)} TiB`;
   const formatCount = value => Number(value || 0).toLocaleString();
   const groups = [
     { label: 'Drive', kind: 'file', color: 'blue' },
@@ -497,98 +509,84 @@ function Overview({ stats, items, folders, audit, systemMetrics, metricsRange, o
     const groupItems = items.filter(item => item.kind === group.kind);
     return { ...group, count: groupItems.length, size: groupItems.reduce((sum, item) => sum + Number(item.size || 0), 0) };
   });
-  const countRows = groups.map(group => ({ label: group.label, value: group.count, color: group.color }));
-  const sizeRows = groups.map(group => ({ label: group.label, value: group.size, color: group.color }));
-  const catalogShare = totalBytes ? Math.min(100, catalogBytes / totalBytes * 100) : 0;
-  return <div className="ops-overview">
-    <section className="ops-summary">
-      <div className="ops-summary-copy">
-        <span className="ops-kicker">SYSTEM SUMMARY</span>
-        <h2>NAS overview</h2>
-        <p>Live catalog and filesystem figures from the connected server.</p>
-      </div>
-      <div className="ops-summary-state"><span className="ops-state-dot"/><span>API responding</span></div>
-    </section>
-
-    <section className="ops-metrics" aria-label="Storage and library metrics">
-      <Metric label="CATALOGUED ITEMS" value={stats ? formatCount(stats.items) : '—'} detail={`${formatCount(folders.length)} folders · ${formatCount(items.length)} indexed records`} />
-      <Metric label="CATALOG SIZE" value={stats ? gib(catalogBytes) : '—'} detail={stats ? `${tib(catalogBytes)} · media catalog only` : 'Waiting for filesystem stats'} />
-      <Metric label="FILESYSTEM USED" value={stats ? gib(usedBytes) : '—'} detail={stats ? `${usage.toFixed(1)}% of total capacity` : 'Waiting for filesystem stats'} />
-      <Metric label="AVAILABLE SPACE" value={stats ? gib(freeBytes) : '—'} detail={stats ? `${tib(totalBytes)} total filesystem capacity` : 'Waiting for filesystem stats'} />
-    </section>
-
-    <section className="ops-panel ops-capacity-panel">
-      <div className="ops-panel-heading">
-        <div><span className="ops-kicker">FILESYSTEM CAPACITY</span><h3>Storage utilization</h3></div>
-        <span className="ops-panel-value">{stats ? `${usage.toFixed(1)}% used` : 'Waiting for stats'}</span>
-      </div>
-      <div className="ops-storage-bar" role="progressbar" aria-label="Filesystem space used" aria-valuemin={0} aria-valuemax={100} aria-valuenow={stats ? Math.round(usage) : 0}>
-        <span style={{ width: `${stats ? usage : 0}%` }}/>
-      </div>
-      <div className="ops-storage-legend">
-        <span><i className="ops-legend-used"/>Used <strong>{gib(usedBytes)}</strong></span>
-        <span><i className="ops-legend-free"/>Available <strong>{gib(freeBytes)}</strong></span>
-        <span><i className="ops-legend-catalog"/>Catalogued <strong>{gib(catalogBytes)}</strong></span>
-      </div>
-      <div className="ops-capacity-details">
-        <div><small>Filesystem total</small><strong>{gib(totalBytes)}</strong></div>
-        <div><small>Catalog / filesystem</small><strong>{catalogShare.toFixed(2)}%</strong></div>
-        <div><small>Uncatalogued used space</small><strong>{gib(Math.max(0, usedBytes - catalogBytes))}</strong></div>
-      </div>
-      <p className="ops-footnote">Filesystem usage comes from the NAS media directory's underlying filesystem. Catalog size is calculated from indexed media records and can differ from actual disk usage.</p>
-    </section>
-
-    <section className="ops-panel ops-system-panel">
-      <div className="ops-panel-heading ops-system-heading">
-        <div><span className="ops-kicker">HOST PERFORMANCE</span><h3>System monitoring</h3><small className="ops-system-subtitle">Live readings from the Ubuntu NAS host · sampled every 15 seconds</small></div>
-        <div className="ops-range-switch" role="group" aria-label="Chart time range">{[1, 6, 24].map(hours => <button key={hours} className={metricsRange === hours ? 'active' : ''} onClick={() => onMetricsRange(hours)}>{hours}h</button>)}</div>
-      </div>
-      {systemMetrics?.current ? <>
-        <div className="ops-system-summary">
-          <SystemValue label="CPU UTILIZATION" value={systemMetrics.current.cpu_percent == null ? 'Sampling…' : `${systemMetrics.current.cpu_percent.toFixed(1)}%`} detail={`${systemMetrics.current.cpu_cores} logical cores`} />
-          <SystemValue label="MEMORY USED" value={systemMetrics.current.memory_percent == null ? 'Unavailable' : `${systemMetrics.current.memory_percent.toFixed(1)}%`} detail={`${gib(systemMetrics.current.memory_used_bytes)} / ${gib(systemMetrics.current.memory_total_bytes)}`} />
-          <SystemValue label="UPTIME" value={durationLabel(systemMetrics.current.uptime_seconds)} detail={`Load ${systemMetrics.current.load_1m.toFixed(2)} / ${systemMetrics.current.load_5m.toFixed(2)} / ${systemMetrics.current.load_15m.toFixed(2)}`} />
-          <SystemValue label="CPU TEMPERATURE" value={systemMetrics.current.cpu_temperature_c == null ? 'Unavailable' : `${systemMetrics.current.cpu_temperature_c.toFixed(1)} °C`} detail="Host thermal sensor" />
+  const current = systemMetrics?.current;
+  const history = systemMetrics?.history || [];
+  const memoryUsed = Number(current?.memory_used_bytes || 0);
+  const memoryAvailable = Number(current?.memory_available_bytes || 0);
+  const storageRows = stats ? [{ label: 'Used', value: usedBytes, color: 'blue' }, { label: 'Available', value: freeBytes, color: 'slate' }] : [];
+  const libraryRows = groups.map(group => ({ label: group.label, value: group.count, color: group.color }));
+  const panelOptions = [
+    ['cpu', 'CPU utilization'], ['temperature', 'CPU temperature'], ['network', 'Network traffic'],
+    ['load', 'System load'], ['disk', 'Disk activity'], ['memory', 'Memory'],
+    ['storage', 'Filesystem capacity'], ['library', 'Library distribution'],
+    ['activity', 'Recent activity'], ['maintenance', 'Server operations'],
+  ];
+  const panel = (id, title, subtitle, content, className = '') => visible.includes(id) ? (
+    <DashboardSection key={id} id={id} title={title} subtitle={subtitle} collapsed={collapsed.includes(id)} onToggle={toggleCollapsed} className={className}>{content}</DashboardSection>
+  ) : null;
+  return <div className="ops-overview ops-monitor-wall">
+    <header className="ops-wall-header">
+      <div><span className="ops-kicker">ORBIT NAS / SYSTEM</span><h2>System overview</h2><p>{current ? `Host telemetry · Updated ${new Date(current.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'Waiting for host telemetry'}</p></div>
+      <div className="ops-wall-controls">
+        <div className="ops-range-switch" role="group" aria-label="Chart time range">{[1, 3, 6, 24].map(hours => <button key={hours} className={metricsRange === hours ? 'active' : ''} onClick={() => onMetricsRange(hours)}>{hours}h</button>)}</div>
+        <div className="ops-customize-wrap">
+          <button className="ops-customize-button" onClick={() => setCustomizeOpen(value => !value)} aria-expanded={customizeOpen}><SlidersHorizontal size={14}/> Customize</button>
+          {customizeOpen && <div className="ops-customize-menu">
+            <div className="ops-customize-heading"><strong>Homepage panels</strong><button onClick={() => setCustomizeOpen(false)} aria-label="Close customization"><X size={15}/></button></div>
+            {panelOptions.map(([id, label]) => <label key={id} className="ops-panel-option"><input type="checkbox" checked={visible.includes(id)} onChange={() => toggleVisible(id)}/><span>{label}</span></label>)}
+            <button className="ops-customize-reset" onClick={() => { setVisible(panelOptions.map(([id]) => id)); setCollapsed([]); }}>Reset layout</button>
+          </div>}
         </div>
-        <div className="ops-system-chart-grid">
-          <LineChart title="CPU utilization" unit="%" points={systemMetrics.history} series={[{ key: 'cpu_percent', label: 'CPU', color: 'blue' }]} min={0} max={100} format={value => `${value.toFixed(1)}%`} />
-          <LineChart title="Memory utilization" unit="%" points={systemMetrics.history} series={[{ key: 'memory_percent', label: 'Memory', color: 'slate' }]} min={0} max={100} format={value => `${value.toFixed(1)}%`} />
-          <LineChart title="Network throughput" unit="MiB/s" points={systemMetrics.history} series={[{ key: 'network_rx_bytes_per_sec', label: 'Receive', color: 'blue', scale: 1024 ** 2 }, { key: 'network_tx_bytes_per_sec', label: 'Transmit', color: 'violet', scale: 1024 ** 2 }]} format={value => `${value.toFixed(2)} MiB/s`} />
-          <LineChart title="Disk I/O throughput" unit="MiB/s" points={systemMetrics.history} series={[{ key: 'disk_read_bytes_per_sec', label: 'Read', color: 'blue', scale: 1024 ** 2 }, { key: 'disk_write_bytes_per_sec', label: 'Write', color: 'slate', scale: 1024 ** 2 }]} format={value => `${value.toFixed(2)} MiB/s`} />
-        </div>
-        <div className="ops-system-footer"><span>{systemMetrics.history_count} samples in selected window</span><span>Interfaces: {systemMetrics.current.network_interfaces.join(', ') || 'not detected'}</span><span>Block devices: {systemMetrics.current.disk_devices.join(', ') || 'not detected'}</span></div>
-      </> : <div className="ops-monitoring-empty"><span className="ops-monitoring-pulse"/><strong>Waiting for host metrics</strong><small>First readings are collected when the API starts. Charts populate after the first sampling interval.</small></div>}
-    </section>
+      </div>
+    </header>
 
-    <div className="ops-chart-grid">
-      <BarChart title="Items by library" kicker="CONTENT DISTRIBUTION" rows={countRows} format={formatCount} unit="items" empty="No indexed items yet" />
-      <BarChart title="Catalog size by library" kicker="INDEXED MEDIA SIZE" rows={sizeRows} format={gib} unit="GiB" empty="No catalogued media sizes yet" />
+    <div className="ops-wall-kpis">
+      <div><span>CPU</span><strong>{current?.cpu_percent == null ? '—' : `${current.cpu_percent.toFixed(1)}%`}</strong><small>{current?.cpu_cores || '—'} logical cores</small></div>
+      <div><span>MEMORY</span><strong>{current?.memory_percent == null ? '—' : `${current.memory_percent.toFixed(1)}%`}</strong><small>{gib(memoryUsed)} / {gib(current?.memory_total_bytes)}</small></div>
+      <div><span>UPTIME</span><strong>{current ? durationLabel(current.uptime_seconds) : '—'}</strong><small>Host uptime</small></div>
+      <div><span>STORAGE FREE</span><strong>{stats ? gib(freeBytes) : '—'}</strong><small>{stats ? `${usage.toFixed(1)}% used` : 'Filesystem'}</small></div>
+      <div><span>CATALOG</span><strong>{stats ? formatCount(stats.items) : '—'}</strong><small>Indexed items</small></div>
     </div>
 
-    <div className="ops-main-grid">
-      <section className="ops-panel">
-        <div className="ops-panel-heading"><div><span className="ops-kicker">LIBRARY BREAKDOWN</span><h3>Indexed content</h3></div></div>
-        <div className="ops-breakdown">
-          <button onClick={() => onNavigate('drive')}><span className="ops-breakdown-icon file"><HardDrive size={17}/></span><span>Drive files</span><strong>{formatCount(groups[0].count)}</strong><ChevronRight size={15}/></button>
-          <button onClick={() => onNavigate('music')}><span className="ops-breakdown-icon music"><AudioLines size={17}/></span><span>Music tracks</span><strong>{formatCount(groups[1].count)}</strong><ChevronRight size={15}/></button>
-          <button onClick={() => onNavigate('movies')}><span className="ops-breakdown-icon movies"><Film size={17}/></span><span>Movies &amp; shows</span><strong>{formatCount(groups[2].count)}</strong><ChevronRight size={15}/></button>
-        </div>
-      </section>
-      <section className="ops-panel">
-        <div className="ops-panel-heading"><div><span className="ops-kicker">AUDIT LOG</span><h3>Recent activity</h3></div><span className="ops-panel-value">{audit.length} events</span></div>
-        {audit.length ? <div className="ops-activity">{audit.map(event => <div className="ops-activity-row" key={event.id}><span className="ops-activity-mark"/><span><strong>{String(event.action).replaceAll('.', ' ')}</strong><small>{event.subject}</small></span><time>{dateLabel(event.created_at)}</time></div>)}</div> : <p className="ops-empty">No recorded activity yet.</p>}
-      </section>
+    <div className="ops-wall-grid">
+      {panel('temperature', 'CPU temperature', 'Host thermal sensor · °C', <LineChart title="CPU temperature" unit="°C" points={history} series={[{ key: 'cpu_temperature_c', label: 'CPU', color: 'amber' }]} format={value => `${value.toFixed(1)} °C`}/>)}
+      {panel('cpu', 'CPU utilization', 'Total host utilization · %', <LineChart title="CPU utilization" unit="%" points={history} series={[{ key: 'cpu_percent', label: 'Total CPU', color: 'blue' }]} min={0} max={100} format={value => `${value.toFixed(1)}%`}/>)}
+      {panel('network', 'Interface traffic', 'Aggregate receive / transmit · MiB/s', <LineChart title="Interface traffic" unit="MiB/s" points={history} series={[{ key: 'network_rx_bytes_per_sec', label: 'Receive', color: 'blue', scale: 1024 ** 2 }, { key: 'network_tx_bytes_per_sec', label: 'Transmit', color: 'violet', scale: 1024 ** 2 }]} format={value => `${value.toFixed(2)} MiB/s`}/>)}
+      {panel('load', 'System load', '1 / 5 / 15 minute load average', <LineChart title="System load" unit="load" points={history} series={[{ key: 'load_1m', label: '1 min', color: 'amber' }, { key: 'load_5m', label: '5 min', color: 'blue' }, { key: 'load_15m', label: '15 min', color: 'slate' }]} format={value => value.toFixed(2)}/>)}
+      {panel('disk', 'Disk activity', 'Aggregate block-device throughput · MiB/s', <LineChart title="Disk activity" unit="MiB/s" points={history} series={[{ key: 'disk_read_bytes_per_sec', label: 'Read', color: 'blue', scale: 1024 ** 2 }, { key: 'disk_write_bytes_per_sec', label: 'Write', color: 'violet', scale: 1024 ** 2 }]} format={value => `${value.toFixed(2)} MiB/s`}/>)}
+      {panel('memory', 'Memory', 'Physical memory allocation', <div className="ops-wall-memory"><DonutChart rows={[{label:'Used',value:memoryUsed,color:'blue'},{label:'Available',value:memoryAvailable,color:'slate'}]} centerValue={current?.memory_percent == null ? '—' : `${current.memory_percent.toFixed(1)}%`} centerLabel="used" format={gib}/><div className="ops-donut-legend"><span><i className="blue"/>Used<strong>{gib(memoryUsed)}</strong></span><span><i className="slate"/>Available<strong>{gib(memoryAvailable)}</strong></span><small>{current ? `${gib(current.memory_total_bytes)} total memory` : 'Waiting for memory data'}</small></div></div>)}
+      {panel('storage', 'Filesystem capacity', 'NAS media directory filesystem', <div className="ops-wall-memory"><DonutChart rows={storageRows} centerValue={stats ? `${usage.toFixed(1)}%` : '—'} centerLabel="used" format={gib}/><div className="ops-donut-legend"><span><i className="blue"/>Used<strong>{gib(usedBytes)}</strong></span><span><i className="slate"/>Available<strong>{gib(freeBytes)}</strong></span><small>{stats ? `${gib(totalBytes)} total capacity` : 'Waiting for filesystem stats'}</small></div></div>)}
+      {panel('library', 'Library distribution', 'Indexed items by collection', <div className="ops-wall-memory"><DonutChart rows={libraryRows} centerValue={formatCount(items.length)} centerLabel="items" format={formatCount}/><div className="ops-donut-legend">{groups.map(group => <span key={group.label}><i className={group.color}/>{group.label}<strong>{formatCount(group.count)}</strong></span>)}<small>Counts are based on indexed library records</small></div></div>)}
     </div>
 
-    <section className="ops-panel">
-      <div className="ops-panel-heading"><div><span className="ops-kicker">MAINTENANCE</span><h3>Server operations</h3></div></div>
-      <div className="ops-tools">
-        <button onClick={() => onAdmin('scan')} disabled={busy}><span className="ops-tool-icon"><RefreshCw size={17}/></span><span><strong>Scan media directory</strong><small>Index files added outside the apps</small></span><ChevronRight size={15}/></button>
-        <button onClick={() => onAdmin('backup')} disabled={busy}><span className="ops-tool-icon"><Database size={17}/></span><span><strong>Back up catalog database</strong><small>Create a SQLite database snapshot</small></span><ChevronRight size={15}/></button>
-      </div>
-    </section>
-    <p className="ops-data-note">CPU, memory, network throughput, disk SMART, and container metrics are not yet exposed by the current API. These charts use indexed media records and filesystem measurements only.</p>
+    <div className="ops-wall-bottom">
+      {panel('activity', 'Recent activity', `${audit.length} audit events`, audit.length ? <div className="ops-activity">{audit.map(event => <div className="ops-activity-row" key={event.id}><span className="ops-activity-mark"/><span><strong>{String(event.action).replaceAll('.', ' ')}</strong><small>{event.subject}</small></span><time>{dateLabel(event.created_at)}</time></div>)}</div> : <p className="ops-empty">No recorded activity yet.</p>, 'ops-wall-wide')}
+      {panel('maintenance', 'Server operations', 'Maintenance actions', <div className="ops-tools"><button onClick={() => onAdmin('scan')} disabled={busy}><span className="ops-tool-icon"><RefreshCw size={17}/></span><span><strong>Scan media directory</strong><small>Index files added outside the apps</small></span><ChevronRight size={15}/></button><button onClick={() => onAdmin('backup')} disabled={busy}><span className="ops-tool-icon"><Database size={17}/></span><span><strong>Back up catalog database</strong><small>Create a SQLite database snapshot</small></span><ChevronRight size={15}/></button></div>, 'ops-wall-wide')}
+    </div>
+    {!visible.length && <div className="ops-empty-layout">No homepage panels selected. Use Customize to add panels.</div>}
+    <p className="ops-wall-footnote">Host-wide network and disk rates are aggregate counters. CPU temperature appears only when a readable host sensor is available. Individual disk SMART and pool telemetry are not included in this dashboard yet.</p>
   </div>;
+}
+
+function DashboardSection({ id, title, subtitle, collapsed, onToggle, className = '', children }) {
+  return <section className={`ops-wall-panel ${className}`}>
+    <button className="ops-wall-panel-heading" onClick={() => onToggle(id)} aria-expanded={!collapsed}>
+      <span><strong>{title}</strong><small>{subtitle}</small></span><ChevronDown size={15} className={collapsed ? 'is-collapsed' : ''}/>
+    </button>
+    {!collapsed && <div className="ops-wall-panel-content">{children}</div>}
+  </section>;
+}
+
+function DonutChart({ rows, centerValue, centerLabel, format }) {
+  const total = rows.reduce((sum, row) => sum + Math.max(0, Number(row.value) || 0), 0);
+  let cursor = 0;
+  const stops = rows.map(row => {
+    const start = total ? cursor / total * 100 : 0;
+    cursor += Math.max(0, Number(row.value) || 0);
+    const end = total ? cursor / total * 100 : 0;
+    return `var(--ops-${row.color}) ${start}% ${end}%`;
+  }).join(', ');
+  return <div className="ops-donut-wrap"><div className="ops-donut" style={{ background: total ? `conic-gradient(${stops})` : 'var(--ops-donut-empty)' }}><div><strong>{centerValue}</strong><small>{centerLabel}</small></div></div></div>;
 }
 
 function SystemValue({ label, value, detail }) {
