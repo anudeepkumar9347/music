@@ -475,23 +475,87 @@ function FilterSelect({ icon, label, value, options, onChange }) {
 }
 
 function Overview({ stats, items, folders, audit, onNavigate, onAdmin, busy }) {
-  const usage = stats?.total_bytes ? Math.min(100, (stats.total_bytes - stats.free_bytes) / stats.total_bytes * 100) : 0;
-  return <div className="overview">
-    <p className="page-description">Your private library, at a glance. Changes sync across the web and mobile apps.</p>
-    <section className="welcome-card"><div><p className="eyebrow">ORBIT NAS · PRIVATE BY DESIGN</p><h2>Your library,<br /><em>all in one place.</em></h2><p>Files, music, and movies stored safely on your own hardware.</p></div><div className="welcome-art"><div className="orbit-ring ring-one"/><div className="orbit-ring ring-two"/><Cloud size={65}/><span>YOUR NAS</span></div></section>
-    <div className="stats-grid">
-      <StatCard icon={<Database size={18}/>} label="Indexed files" value={stats ? Number(stats.items).toLocaleString() : '—'} detail={`${folders.length} folders`} tone="mint" />
-      <StatCard icon={<HardDrive size={18}/>} label="Library size" value={stats ? bytes(stats.bytes) : '—'} detail="Across all libraries" tone="blue" />
-      <StatCard icon={<ArrowDownToLine size={18}/>} label="Available space" value={stats ? bytes(stats.free_bytes) : '—'} detail={stats ? `${bytes(stats.total_bytes)} total capacity` : 'NAS storage'} tone="lilac" />
-    </div>
-    <section className="storage-panel"><div className="panel-title"><div><p className="eyebrow">DISK USAGE</p><h3>Storage health</h3></div><span className="online-pill"><span/> Healthy</span></div><div className="storage-track"><span style={{ width: `${usage}%` }}/></div><div className="storage-caption"><span>{stats ? `${Math.round(usage)}% used` : 'Loading disk usage'}</span><span>{stats ? `${bytes(stats.free_bytes)} available` : ''}</span></div></section>
-    <section className="workspace-grid">
-      <WorkspaceCard icon={<HardDrive size={20}/>} tone="blue" title="Drive" count={items.length} detail="All files and folders" onClick={() => onNavigate('drive')} />
-      <WorkspaceCard icon={<AudioLines size={20}/>} tone="mint" title="Music" count={items.filter(item => item.kind === 'music').length} detail="Audio ready to play" onClick={() => onNavigate('music')} />
-      <WorkspaceCard icon={<Film size={20}/>} tone="peach" title="Movies" count={items.filter(item => item.kind === 'movie').length} detail="Video ready to stream" onClick={() => onNavigate('movies')} />
+  const totalBytes = Number(stats?.total_bytes || 0);
+  const freeBytes = Number(stats?.free_bytes || 0);
+  const usedBytes = Math.max(0, totalBytes - freeBytes);
+  const usage = totalBytes ? Math.min(100, usedBytes / totalBytes * 100) : 0;
+  const musicCount = items.filter(item => item.kind === 'music').length;
+  const movieCount = items.filter(item => item.kind === 'movie').length;
+  const fileCount = items.filter(item => item.kind === 'file').length;
+  const formatCount = value => Number(value || 0).toLocaleString();
+  return <div className="ops-overview">
+    <section className="ops-summary">
+      <div className="ops-summary-copy">
+        <span className="ops-kicker">SYSTEM SUMMARY</span>
+        <h2>NAS overview</h2>
+        <p>Storage and library status from the connected server.</p>
+      </div>
+      <div className="ops-summary-state"><span className="ops-state-dot"/><span>API responding</span></div>
     </section>
-    <section className="admin-panel"><div className="panel-title"><div><p className="eyebrow">ADMINISTRATION</p><h3>Server tools</h3></div></div><div className="admin-actions"><button className="admin-action" onClick={() => onAdmin('scan')} disabled={busy}><RefreshCw size={18}/><span><strong>Scan library</strong><small>Index files added outside the apps</small></span><ChevronRight size={17}/></button><button className="admin-action" onClick={() => onAdmin('backup')} disabled={busy}><Database size={18}/><span><strong>Back up database</strong><small>Create a point-in-time catalog backup</small></span><ChevronRight size={17}/></button></div></section>
-    <section className="activity-panel"><div className="panel-title"><div><p className="eyebrow">RECENT ACTIVITY</p><h3>Latest changes</h3></div></div>{audit.length ? <div className="activity-list">{audit.map(event => <div className="activity-row" key={event.id}><span className="activity-dot"/><span className="activity-copy"><strong>{String(event.action).replaceAll('.', ' ')}</strong><small>{event.subject}</small></span><time>{dateLabel(event.created_at)}</time></div>)}</div> : <p className="empty-activity">Activity will appear here after you make changes.</p>}</section>
+
+    <section className="ops-metrics" aria-label="Storage and library metrics">
+      <article className="ops-metric">
+        <span className="ops-metric-label">CATALOGUED ITEMS</span>
+        <strong>{stats ? formatCount(stats.items) : '—'}</strong>
+        <small>{formatCount(folders.length)} folders indexed</small>
+      </article>
+      <article className="ops-metric">
+        <span className="ops-metric-label">LIBRARY SIZE</span>
+        <strong>{stats ? bytes(stats.bytes) : '—'}</strong>
+        <small>Files recorded in the catalog</small>
+      </article>
+      <article className="ops-metric">
+        <span className="ops-metric-label">SPACE USED</span>
+        <strong>{stats ? bytes(usedBytes) : '—'}</strong>
+        <small>{stats ? `${usage.toFixed(1)}% of filesystem capacity` : 'Filesystem usage'}</small>
+      </article>
+      <article className="ops-metric">
+        <span className="ops-metric-label">SPACE AVAILABLE</span>
+        <strong>{stats ? bytes(freeBytes) : '—'}</strong>
+        <small>{stats ? `${bytes(totalBytes)} total capacity` : 'Filesystem capacity'}</small>
+      </article>
+    </section>
+
+    <div className="ops-main-grid">
+      <section className="ops-panel ops-storage-panel">
+        <div className="ops-panel-heading">
+          <div><span className="ops-kicker">FILESYSTEM</span><h3>Storage capacity</h3></div>
+          <span className="ops-panel-value">{stats ? `${usage.toFixed(1)}% used` : 'Waiting for stats'}</span>
+        </div>
+        <div className="ops-storage-bar" role="progressbar" aria-label="Filesystem space used" aria-valuemin={0} aria-valuemax={100} aria-valuenow={stats ? Math.round(usage) : 0}>
+          <span style={{ width: `${stats ? usage : 0}%` }}/>
+        </div>
+        <div className="ops-storage-legend">
+          <span><i className="ops-legend-used"/>Used <strong>{stats ? bytes(usedBytes) : '—'}</strong></span>
+          <span><i className="ops-legend-free"/>Available <strong>{stats ? bytes(freeBytes) : '—'}</strong></span>
+        </div>
+        <p className="ops-footnote">Capacity is reported for the filesystem containing the NAS media directory. This is not a per-disk SMART or RAID health check.</p>
+      </section>
+
+      <section className="ops-panel">
+        <div className="ops-panel-heading"><div><span className="ops-kicker">LIBRARY BREAKDOWN</span><h3>Indexed content</h3></div></div>
+        <div className="ops-breakdown">
+          <button onClick={() => onNavigate('drive')}><span className="ops-breakdown-icon file"><HardDrive size={17}/></span><span>Drive files</span><strong>{formatCount(fileCount)}</strong><ChevronRight size={15}/></button>
+          <button onClick={() => onNavigate('music')}><span className="ops-breakdown-icon music"><AudioLines size={17}/></span><span>Music tracks</span><strong>{formatCount(musicCount)}</strong><ChevronRight size={15}/></button>
+          <button onClick={() => onNavigate('movies')}><span className="ops-breakdown-icon movies"><Film size={17}/></span><span>Movies &amp; shows</span><strong>{formatCount(movieCount)}</strong><ChevronRight size={15}/></button>
+        </div>
+      </section>
+    </div>
+
+    <div className="ops-lower-grid">
+      <section className="ops-panel">
+        <div className="ops-panel-heading"><div><span className="ops-kicker">MAINTENANCE</span><h3>Server operations</h3></div></div>
+        <div className="ops-tools">
+          <button onClick={() => onAdmin('scan')} disabled={busy}><span className="ops-tool-icon"><RefreshCw size={17}/></span><span><strong>Scan media directory</strong><small>Index files added outside the apps</small></span><ChevronRight size={15}/></button>
+          <button onClick={() => onAdmin('backup')} disabled={busy}><span className="ops-tool-icon"><Database size={17}/></span><span><strong>Back up catalog database</strong><small>Create a SQLite database snapshot</small></span><ChevronRight size={15}/></button>
+        </div>
+      </section>
+      <section className="ops-panel">
+        <div className="ops-panel-heading"><div><span className="ops-kicker">AUDIT LOG</span><h3>Recent activity</h3></div><span className="ops-panel-value">{audit.length} events</span></div>
+        {audit.length ? <div className="ops-activity">{audit.map(event => <div className="ops-activity-row" key={event.id}><span className="ops-activity-mark"/><span><strong>{String(event.action).replaceAll('.', ' ')}</strong><small>{event.subject}</small></span><time>{dateLabel(event.created_at)}</time></div>)}</div> : <p className="ops-empty">No recorded activity yet.</p>}
+      </section>
+    </div>
+    <p className="ops-data-note">CPU, memory, network, per-device SMART, and container diagnostics are not exposed by the current API. They are intentionally omitted until server-side monitoring is implemented.</p>
   </div>;
 }
 
