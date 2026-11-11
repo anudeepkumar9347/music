@@ -46,7 +46,8 @@ class MetricsCollector:
             lines = (self.proc / "stat").read_text().splitlines()
             cpu_line = next(line for line in lines if line.startswith("cpu "))
             values = [int(value) for value in cpu_line.split()[1:]]
-            total = sum(values)
+            # guest and guest_nice are already included in user/nice by Linux.
+            total = sum(values[:8])
             idle = values[3] + (values[4] if len(values) > 4 else 0)
             cores = sum(1 for line in lines if line.startswith("cpu") and line[3:4].isdigit())
             percent = None
