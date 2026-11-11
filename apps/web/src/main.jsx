@@ -440,6 +440,7 @@ function App() {
         <div className="toolbar">
           <label className="search-field"><Search size={17} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={`Search ${meta.title.toLowerCase()} by name or metadata`} /><kbd>/</kbd></label>
           {section === 'drive' && <button className="button button-light" onClick={() => void createFolder()}><FolderPlus size={16} /> New folder</button>}
+          <label className="button button-light upload-button section-upload-button"><Upload size={15}/>{section === 'music' ? 'Add music' : section === 'movies' ? 'Add videos' : 'Upload files'}<input type="file" multiple accept={section === 'music' ? 'audio/*' : section === 'movies' ? 'video/*' : undefined} onChange={section === 'music' || section === 'movies' ? beginMediaUpload : upload} disabled={busy}/></label>
           {(section === 'music' || section === 'movies') && <FilterSelect icon={<Languages size={15}/>} label="Language" value={languageFilter} options={languages} onChange={setLanguageFilter}/>}
           {(section === 'music' || section === 'movies') && <FilterSelect icon={<ListFilter size={15}/>} label="Genre" value={genreFilter} options={genres} onChange={setGenreFilter}/>}
           {section === 'movies' && <div className="segmented-filter" aria-label="Filter movie type">{[['all', 'All'], ['movie', 'Movies'], ['show', 'TV shows']].map(([value, label]) => <button key={value} className={movieTypeFilter === value ? 'selected' : ''} onClick={() => setMovieTypeFilter(value)}>{label}</button>)}</div>}
