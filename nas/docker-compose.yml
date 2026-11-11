@@ -33,9 +33,7 @@ services:
       - /proc/loadavg:/host/proc/loadavg:ro
       - /proc/diskstats:/host/proc/diskstats:ro
       - /proc/net/dev:/host/proc/net/dev:ro
-      - /sys/class/thermal:/host/sys/class/thermal:ro
-      - /sys/class/hwmon:/host/sys/class/hwmon:ro
-      - /sys/class/block:/host/sys/class/block:ro
+      - /sys:/host/sys:ro
     restart: unless-stopped
 
   # Enable after placing a real hostname in Caddyfile and DNS pointing to this laptop.
