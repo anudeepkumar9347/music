@@ -33,6 +33,20 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 The web app proxies API requests through its own origin. Mobile clients connect directly to port `8000` and use the same `API_TOKEN` value. The default development token is intended for a trusted local network; replace it before enabling remote access.
 
+
+## Host system monitoring
+
+The web overview reads authenticated host metrics from `GET /api/system/metrics?range_hours=6`. The API samples CPU utilization, memory, load averages, uptime, network throughput, disk I/O, and available CPU temperature sensors every 15 seconds. The dashboard can display 1, 6, or 24 hours of samples.
+
+The API container receives read-only mounts for selected host `/proc` counters and `/sys` hardware metadata. It does not use privileged mode or the host PID namespace, does not run shell commands for monitoring, and does not write monitoring samples into the media SQLite database. Samples are kept in a bounded in-memory buffer (up to 24 hours) and are reset when the API container restarts. Temperature is shown only when the host exposes a readable sensor. Disk I/O and network throughput are aggregate host counters; this is not SMART health, per-disk temperature, or per-process accounting.
+
+After pulling an update, recreate the API container so the new read-only mounts take effect:
+
+```sh
+cd nas
+docker compose up -d --build api web
+```
+
 ## Automatic metadata and artwork
 
 Music and Movies uploads open a metadata review form before the file is sent to the NAS. The form searches by filename and lets you review or edit the suggested fields, use the suggested cover/poster, or upload your own image. Multiple selected media files pass through the form one by one. The API also reads embedded media tags when the file arrives.

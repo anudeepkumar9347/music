@@ -23,6 +23,7 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from .system_metrics import system_metrics
 try:
     from PIL import Image
 except ImportError:
@@ -695,6 +696,12 @@ def scan_library(*, enrich_external: bool = True) -> int:
 def startup() -> None:
     initialise()
     scan_library()
+    system_metrics.start()
+
+
+@app.on_event("shutdown")
+def shutdown() -> None:
+    system_metrics.stop()
 
 
 @app.get("/health")
@@ -1214,6 +1221,15 @@ def stats(_: None = Depends(require_token)) -> dict[str, int]:
         row = db.execute("SELECT COUNT(*) AS items, COALESCE(SUM(size), 0) AS bytes FROM media").fetchone()
     usage = shutil.disk_usage(MEDIA_ROOT)
     return {"items": row["items"], "bytes": row["bytes"], "free_bytes": usage.free, "total_bytes": usage.total}
+
+
+@app.get("/api/system/metrics")
+def system_metrics_snapshot(
+    range_hours: int = Query(default=6, ge=1, le=24),
+    _: None = Depends(require_token),
+) -> dict[str, Any]:
+    """Return read-only host performance metrics and bounded in-memory history."""
+    return system_metrics.snapshot(range_hours=range_hours)
 
 
 @app.get("/api/audit")

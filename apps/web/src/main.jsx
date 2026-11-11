@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
-  Activity, ArrowDownToLine, ArrowLeft, AudioLines, Check, ChevronRight, CircleHelp, Cloud,
-  Database, Film, File, FileAudio, FileImage, FileVideo, Folder, FolderPlus, HardDrive,
-  Heart, LayoutDashboard, ListFilter, LoaderCircle, MoreHorizontal, Pencil, Plus,
-  RefreshCw, Search, Settings2, ShieldCheck, Trash2, Upload, X, ListMusic, Languages,
+  Activity, ArrowDownToLine, ArrowLeft, AudioLines, Check, ChevronDown, ChevronRight, CircleHelp, Cloud,
+  Database, Film, File, FileAudio, FileImage, FileVideo, Folder, FolderPlus, GripVertical, HardDrive,
+  LayoutDashboard, ListFilter, LoaderCircle, MoreHorizontal, Moon, Pencil, Plus,
+  RefreshCw, Search, Settings2, ShieldCheck, SlidersHorizontal, Sun, Trash2, Upload, X, ListMusic, Languages,
 } from 'lucide-react';
 import './styles.css';
 
@@ -72,14 +72,12 @@ const pageMeta = {
   drive: { title: 'Drive', eyebrow: 'FILES & FOLDERS', description: 'Manage documents and everything outside your media libraries.' },
   music: { title: 'Music', eyebrow: 'AUDIO LIBRARY', description: 'Upload, organize, and play music from your server.' },
   movies: { title: 'Movies', eyebrow: 'VIDEO LIBRARY', description: 'Keep your films and shows ready to stream.' },
-  favorites: { title: 'Favorites', eyebrow: 'QUICK ACCESS', description: 'Your starred items, shared with the mobile apps.' },
 };
 
 function App() {
   const [section, setSection] = useState('overview');
   const [items, setItems] = useState([]);
   const [folders, setFolders] = useState([]);
-  const [favorites, setFavorites] = useState([]);
   const [playlists, setPlaylists] = useState([]);
   const [playlistContents, setPlaylistContents] = useState([]);
   const [activePlaylist, setActivePlaylist] = useState('');
@@ -90,6 +88,8 @@ function App() {
   const [movieTypeFilter, setMovieTypeFilter] = useState('all');
   const [driveLayout, setDriveLayout] = useState('grid');
   const [stats, setStats] = useState(null);
+  const [systemMetrics, setSystemMetrics] = useState(null);
+  const [metricsRange, setMetricsRange] = useState(6);
   const [audit, setAudit] = useState([]);
   const [folderId, setFolderId] = useState(null);
   const [folderTrail, setFolderTrail] = useState([]);
@@ -111,7 +111,7 @@ function App() {
   const [uploadLookupMessage, setUploadLookupMessage] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [creditsOpen, setCreditsOpen] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem('orbit-theme') || 'dark');
   const [tokenDraft, setTokenDraft] = useState(getToken());
   const [apiUrlDraft, setApiUrlDraft] = useState(getApiBaseUrl());
 
@@ -119,10 +119,10 @@ function App() {
     if (quiet) setRefreshing(true); else setBusy(true);
     setError('');
     try {
-      const [nextItems, nextFolders, nextFavorites, nextStats, nextPlaylists] = await Promise.all([
-        api('/api/library'), api('/api/folders'), api('/api/favorites'), api('/api/stats'), api('/api/playlists'),
+      const [nextItems, nextFolders, nextStats, nextPlaylists] = await Promise.all([
+        api('/api/library'), api('/api/folders'), api('/api/stats'), api('/api/playlists'),
       ]);
-      setItems(nextItems); setFolders(nextFolders); setFavorites(nextFavorites); setStats(nextStats); setPlaylists(nextPlaylists);
+      setItems(nextItems); setFolders(nextFolders); setStats(nextStats); setPlaylists(nextPlaylists);
       if (section === 'overview') {
         const log = await api('/api/audit?limit=8').catch(() => []);
         setAudit(log);
@@ -133,6 +133,22 @@ function App() {
   }, [section]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (section !== 'overview') return undefined;
+    let active = true;
+    const refreshMetrics = () => {
+      api(`/api/system/metrics?range_hours=${metricsRange}`)
+        .then(result => { if (active) setSystemMetrics(result); })
+        .catch(() => { if (active) setSystemMetrics(null); });
+    };
+    refreshMetrics();
+    const timer = window.setInterval(refreshMetrics, 15000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [section, metricsRange]);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('orbit-theme', theme);
+  }, [theme]);
   useEffect(() => {
     setFolderId(null); setFolderTrail([]); setQuery(''); setSearchItems(null); setActivePlaylist(''); setLanguageFilter(''); setGenreFilter(''); setMovieTypeFilter('all');
   }, [section]);
@@ -153,7 +169,6 @@ function App() {
   const currentUpload = uploadQueue[uploadIndex] || null;
   const driveFiles = useMemo(() => items.filter(item => item.kind === 'file'), [items]);
   const sectionItems = useMemo(() => {
-    if (section === 'favorites') return favorites;
     const kind = section === 'music' ? 'music' : section === 'movies' ? 'movie' : 'file';
     const source = searchItems || items;
     let filtered = source.filter(item => (section === 'drive' ? item.kind === 'file' : item.kind === kind) && (section !== 'drive' || (item.folder_id ?? null) === folderId));
@@ -162,13 +177,12 @@ function App() {
     if (languageFilter) filtered = filtered.filter(item => item.language === languageFilter);
     if (genreFilter) filtered = filtered.filter(item => item.genre === genreFilter);
     return filtered;
-  }, [activePlaylist, favorites, folderId, genreFilter, items, languageFilter, movieTypeFilter, playlistContents, searchItems, section]);
+  }, [activePlaylist, folderId, genreFilter, items, languageFilter, movieTypeFilter, playlistContents, searchItems, section]);
   const visibleItems = useMemo(() => {
     const matched = sectionItems.filter(item => !query.trim() || searchItems || `${item.name} ${item.title || ''} ${item.artist || ''} ${item.album || ''}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
     return [...matched].sort((a, b) => sort === 'name' ? (a.title || a.name).localeCompare(b.title || b.name) : sort === 'size' ? (b.size || 0) - (a.size || 0) : String(b.created_at || '').localeCompare(String(a.created_at || '')));
   }, [query, searchItems, sectionItems, sort]);
   const visibleFolders = section === 'drive' ? folders.filter(folder => folder.parent_id === folderId && (!query.trim() || folder.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))) : [];
-  const favoriteIds = useMemo(() => new Set(favorites.map(item => item.id)), [favorites]);
   const languages = useMemo(() => [...new Set(items.filter(item => section === 'music' ? item.kind === 'music' : item.kind === 'movie').map(item => item.language).filter(Boolean))].sort(), [items, section]);
   const genres = useMemo(() => [...new Set(items.filter(item => section === 'music' ? item.kind === 'music' : item.kind === 'movie').map(item => item.genre).filter(Boolean))].sort(), [items, section]);
   const categoryCounts = useMemo(() => ({
@@ -325,13 +339,6 @@ function App() {
       flash(`${label[0].toUpperCase()}${label.slice(1)} deleted.`); await load({ quiet: true });
     } catch (cause) { setError(cause.message || `Could not delete ${label}.`); }
   }
-  async function toggleFavorite(item) {
-    const liked = favoriteIds.has(item.id);
-    try {
-      await api(`/api/favorites/${item.id}`, { method: liked ? 'DELETE' : 'POST' });
-      setFavorites(previous => liked ? previous.filter(fav => fav.id !== item.id) : [item, ...previous]);
-    } catch (cause) { setError(cause.message || 'Favorite update failed.'); }
-  }
   async function choosePlaylist(id) {
     setActivePlaylist(id);
     if (!id) { setPlaylistContents([]); return; }
@@ -398,7 +405,7 @@ function App() {
   const meta = pageMeta[section];
   const libraryTitle = section === 'drive' && currentFolder ? currentFolder.name : meta.title;
 
-  return <div className="app-shell">
+  return <div className="app-shell" data-theme={theme}>
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark"><Cloud size={19} /></span><span>orbit<span className="brand-light">nas</span></span></div>
       <p className="workspace-label">LIBRARY</p>
@@ -407,12 +414,11 @@ function App() {
         <NavButton active={section === 'drive'} onClick={() => navigate('drive')} icon={<HardDrive size={18} />} label="Drive" count={categoryCounts.drive} />
         <NavButton active={section === 'music'} onClick={() => navigate('music')} icon={<AudioLines size={18} />} label="Music" count={categoryCounts.music} />
         <NavButton active={section === 'movies'} onClick={() => navigate('movies')} icon={<Film size={18} />} label="Movies" count={categoryCounts.movies} />
-        <NavButton active={section === 'favorites'} onClick={() => navigate('favorites')} icon={<Heart size={18} />} label="Favorites" count={favorites.length} />
       </nav>
       <div className="sidebar-bottom">
         <div className="sidebar-server"><span className="server-pulse" /><div><strong>NAS connected</strong><small>Private server</small></div></div>
+        <button className="settings-link" onClick={() => setTheme(value => value === 'dark' ? 'light' : 'dark')}><span className="theme-switch-icon">{theme === 'dark' ? <Sun size={17}/> : <Moon size={17}/>}</span>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</button>
         <button className="settings-link" onClick={() => { setTokenDraft(getToken()); setApiUrlDraft(getApiBaseUrl()); setSettingsOpen(true); }}><Settings2 size={17} /> Connection settings</button>
-        <button className="settings-link" onClick={() => setCreditsOpen(true)}>About &amp; credits</button>
         <div className="sidebar-foot"><ShieldCheck size={16} /><span>Files stay on your network</span></div>
       </div>
     </aside>
@@ -421,18 +427,20 @@ function App() {
       <header className="topbar">
         <div><p className="eyebrow">{meta.eyebrow}</p><h1>{libraryTitle}</h1></div>
         <div className="top-actions">
+          <button className="icon-button theme-top-toggle" aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} title={theme === 'dark' ? 'Light theme' : 'Dark theme'} onClick={() => setTheme(value => value === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={17}/> : <Moon size={17}/>}</button>
           <button className="icon-button" aria-label="Refresh library" onClick={() => void load()} disabled={busy}><RefreshCw size={18} className={busy ? 'spin' : ''} /></button>
           {section !== 'overview' && <label className="button button-dark upload-button"><Upload size={16} /> {section === 'music' ? 'Add music' : section === 'movies' ? 'Add videos' : 'Upload files'}<input type="file" multiple accept={section === 'music' ? 'audio/*' : section === 'movies' ? 'video/*' : undefined} onChange={section === 'music' || section === 'movies' ? beginMediaUpload : upload} disabled={busy} /></label>}
           <button className="avatar" title="Connection settings" onClick={() => { setTokenDraft(getToken()); setApiUrlDraft(getApiBaseUrl()); setSettingsOpen(true); }}>O</button>
         </div>
       </header>
 
-      {section === 'overview' ? <Overview stats={stats} items={items} folders={folders} audit={audit} onNavigate={navigate} onAdmin={runAdminAction} busy={busy} /> : <>
+      {section === 'overview' ? <Overview stats={stats} items={items} folders={folders} audit={audit} systemMetrics={systemMetrics} metricsRange={metricsRange} onMetricsRange={setMetricsRange} onNavigate={navigate} onAdmin={runAdminAction} busy={busy} /> : <>
         <p className="page-description">{meta.description}</p>
         {section === 'movies' && <div className="metadata-credit"><span>Movie and show metadata provided by <a href="https://www.omdbapi.com/" target="_blank" rel="noreferrer">OMDb API</a>.</span></div>}
         <div className="toolbar">
           <label className="search-field"><Search size={17} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={`Search ${meta.title.toLowerCase()} by name or metadata`} /><kbd>/</kbd></label>
           {section === 'drive' && <button className="button button-light" onClick={() => void createFolder()}><FolderPlus size={16} /> New folder</button>}
+          <label className="button button-light upload-button section-upload-button"><Upload size={15}/>{section === 'music' ? 'Add music' : section === 'movies' ? 'Add videos' : 'Upload files'}<input type="file" multiple accept={section === 'music' ? 'audio/*' : section === 'movies' ? 'video/*' : undefined} onChange={section === 'music' || section === 'movies' ? beginMediaUpload : upload} disabled={busy}/></label>
           {(section === 'music' || section === 'movies') && <FilterSelect icon={<Languages size={15}/>} label="Language" value={languageFilter} options={languages} onChange={setLanguageFilter}/>}
           {(section === 'music' || section === 'movies') && <FilterSelect icon={<ListFilter size={15}/>} label="Genre" value={genreFilter} options={genres} onChange={setGenreFilter}/>}
           {section === 'movies' && <div className="segmented-filter" aria-label="Filter movie type">{[['all', 'All'], ['movie', 'Movies'], ['show', 'TV shows']].map(([value, label]) => <button key={value} className={movieTypeFilter === value ? 'selected' : ''} onClick={() => setMovieTypeFilter(value)}>{label}</button>)}</div>}
@@ -445,10 +453,10 @@ function App() {
           {folderTrail.map((folder, index) => <React.Fragment key={folder.id}><ChevronRight size={14} /><button className={index === folderTrail.length - 1 ? 'crumb-current' : ''} onClick={() => goToTrail(index)} onDragOver={allowDriveDrop} onDragLeave={leaveDriveDrop} onDrop={event => void dropDriveItem(event, folder.id)}>{folder.name}</button></React.Fragment>)}
         </div>}
         {uploadProgress && <div className="upload-status"><LoaderCircle size={16} className="spin" />{uploadProgress}<span className="progress-track" role="progressbar" aria-label="Upload progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.floor(uploadPercent)}><span style={{ width: `${uploadPercent}%` }} /></span></div>}
-        <div className="section-heading"><div><p className="eyebrow">{section === 'drive' ? 'YOUR FILES' : section === 'favorites' ? 'SAVED ITEMS' : 'LIBRARY CONTENT'}</p><h2>{visibleItems.length + visibleFolders.length} items</h2></div><span className="view-note">{section === 'drive' ? 'Drag files or folders onto a folder to move them' : 'Synced with mobile apps'}</span></div>
+        <div className="section-heading"><div><p className="eyebrow">{section === 'drive' ? 'YOUR FILES' : 'LIBRARY CONTENT'}</p><h2>{visibleItems.length + visibleFolders.length} items</h2></div><span className="view-note">{section === 'drive' ? 'Drag files or folders onto a folder to move them' : 'Synced with mobile apps'}</span></div>
         <div className={`library-grid ${section === 'drive' && driveLayout === 'list' ? 'list-layout' : ''}`}>
           {visibleFolders.map(folder => <FolderCard key={`folder-${folder.id}`} folder={folder} folders={folders} items={driveFiles} draggable={section === 'drive'} onDragStart={event => beginDriveDrag(event, 'folder', folder)} onDragOver={allowDriveDrop} onDragLeave={leaveDriveDrop} onDrop={event => void dropDriveItem(event, folder.id)} onOpen={openFolder} onEdit={() => editTarget(folder, 'folder')} onDelete={() => void removeTarget(folder, 'folder')} />)}
-          {visibleItems.map(item => <MediaCard key={item.id} item={item} liked={favoriteIds.has(item.id)} draggable={section === 'drive'} onDragStart={event => beginDriveDrag(event, 'file', item)} onOpen={() => setSelected(item)} onEdit={() => editTarget(item, 'media')} onDelete={() => void removeTarget(item, 'media')} onFavorite={() => void toggleFavorite(item)} onPlaylist={section === 'music' ? () => { if (activePlaylist) void playlistAction('remove-track', null, item); else if (playlists.length === 1) void playlistAction('add-track', playlists[0], item); else { setPlaylistChoice(String(playlists[0]?.id || '')); setPlaylistPicker(item); } } : null} playlistMode={Boolean(activePlaylist)} onDownload={section === 'drive' ? () => window.open(playbackUrl(item), '_blank', 'noopener') : null} />)}
+          {visibleItems.map(item => <MediaCard key={item.id} item={item} draggable={section === 'drive'} onDragStart={event => beginDriveDrag(event, 'file', item)} onOpen={() => setSelected(item)} onEdit={() => editTarget(item, 'media')} onDelete={() => void removeTarget(item, 'media')} onPlaylist={section === 'music' ? () => { if (activePlaylist) void playlistAction('remove-track', null, item); else if (playlists.length === 1) void playlistAction('add-track', playlists[0], item); else { setPlaylistChoice(String(playlists[0]?.id || '')); setPlaylistPicker(item); } } : null} playlistMode={Boolean(activePlaylist)} onDownload={section === 'drive' ? () => window.open(playbackUrl(item), '_blank', 'noopener') : null} />)}
           {!visibleItems.length && !visibleFolders.length && <EmptyState title={query ? 'No matching items' : `No ${meta.title.toLowerCase()} here yet`} detail={query ? 'Try another search term.' : 'Upload something to get started. Your files will appear in the mobile apps too.'} />}
         </div>
       </>}
@@ -462,7 +470,6 @@ function App() {
     {dialog && <EditDialog kind={dialog.kind} isVideo={dialog.target?.kind === 'movie'} form={form} setForm={setForm} folders={folders} onClose={() => setDialog(null)} onSave={saveDialog} />}
     {playlistPicker && <Modal title="Add to playlist" onClose={() => setPlaylistPicker(null)}><div className="playlist-picker"><p>Add <strong>{playlistPicker.title || playlistPicker.name}</strong> to a music playlist.</p><label>Playlist<select value={playlistChoice} onChange={event => setPlaylistChoice(event.target.value)}><option value="" disabled>Select a playlist</option>{playlists.map(playlist => <option key={playlist.id} value={playlist.id}>{playlist.name}</option>)}</select></label><div className="dialog-actions"><button className="button button-light" onClick={() => setPlaylistPicker(null)}>Cancel</button><button className="button button-dark" onClick={() => void playlistAction('add-track', null, playlistPicker)}><ListMusic size={15}/>Add track</button></div></div></Modal>}
     {settingsOpen && <Modal title="Connection settings" onClose={() => setSettingsOpen(false)}><form onSubmit={saveToken} className="settings-form"><p>Set the NAS API address and the same auth string as <code>API_TOKEN</code> in the server environment. These values are saved only in this browser.</p><label>API server URL<input type="url" placeholder="Leave blank to use this site's /api proxy" value={apiUrlDraft} onChange={event => setApiUrlDraft(event.target.value)} autoComplete="url" /></label><label>Auth string (API token)<input type="password" value={tokenDraft} onChange={event => setTokenDraft(event.target.value)} autoComplete="current-password" /></label><div className="dialog-actions"><button type="button" className="button button-light" onClick={() => setSettingsOpen(false)}>Cancel</button><button className="button button-dark">Save and reconnect</button></div></form></Modal>}
-    {creditsOpen && <Modal title="About & credits" onClose={() => setCreditsOpen(false)}><div className="credits-content"><p>Movie and show metadata is provided by <a href="https://www.omdbapi.com/" target="_blank" rel="noreferrer">OMDb API</a>.</p></div></Modal>}
   </div>;
 }
 
@@ -474,25 +481,169 @@ function FilterSelect({ icon, label, value, options, onChange }) {
   return <label className="filter-select">{icon}<select value={value} onChange={event => onChange(event.target.value)} aria-label={`Filter by ${label.toLowerCase()}`}><option value="">All {label.toLowerCase()}s</option>{options.map(option => <option key={option} value={option}>{option}</option>)}</select></label>;
 }
 
-function Overview({ stats, items, folders, audit, onNavigate, onAdmin, busy }) {
-  const usage = stats?.total_bytes ? Math.min(100, (stats.total_bytes - stats.free_bytes) / stats.total_bytes * 100) : 0;
-  return <div className="overview">
-    <p className="page-description">Your private library, at a glance. Changes sync across the web and mobile apps.</p>
-    <section className="welcome-card"><div><p className="eyebrow">ORBIT NAS · PRIVATE BY DESIGN</p><h2>Your library,<br /><em>all in one place.</em></h2><p>Files, music, and movies stored safely on your own hardware.</p></div><div className="welcome-art"><div className="orbit-ring ring-one"/><div className="orbit-ring ring-two"/><Cloud size={65}/><span>YOUR NAS</span></div></section>
-    <div className="stats-grid">
-      <StatCard icon={<Database size={18}/>} label="Indexed files" value={stats ? Number(stats.items).toLocaleString() : '—'} detail={`${folders.length} folders`} tone="mint" />
-      <StatCard icon={<HardDrive size={18}/>} label="Library size" value={stats ? bytes(stats.bytes) : '—'} detail="Across all libraries" tone="blue" />
-      <StatCard icon={<ArrowDownToLine size={18}/>} label="Available space" value={stats ? bytes(stats.free_bytes) : '—'} detail={stats ? `${bytes(stats.total_bytes)} total capacity` : 'NAS storage'} tone="lilac" />
+function Overview({ stats, items, folders, audit, systemMetrics, metricsRange, onMetricsRange, onNavigate, onAdmin, busy }) {
+  const defaults = ['temperature', 'network', 'library', 'disk', 'cpu', 'load', 'memory', 'storage'];
+  const [order, setOrder] = useState(() => {
+    try { const saved = JSON.parse(localStorage.getItem('orbit-home-order')); return Array.isArray(saved) ? [...saved.filter(id => defaults.includes(id)), ...defaults.filter(id => !saved.includes(id))] : defaults; }
+    catch { return defaults; }
+  });
+  const [visible, setVisible] = useState(() => {
+    try { const saved = JSON.parse(localStorage.getItem('orbit-home-panels')); return Array.isArray(saved) ? saved : defaults; }
+    catch { return defaults; }
+  });
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('orbit-home-collapsed')) || []; } catch { return []; }
+  });
+  const [sizes, setSizes] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('orbit-home-sizes')) || {}; } catch { return {}; }
+  });
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+  const [dragging, setDragging] = useState('');
+  useEffect(() => { localStorage.setItem('orbit-home-order', JSON.stringify(order)); }, [order]);
+  useEffect(() => { localStorage.setItem('orbit-home-panels', JSON.stringify(visible)); }, [visible]);
+  useEffect(() => { localStorage.setItem('orbit-home-collapsed', JSON.stringify(collapsed)); }, [collapsed]);
+  useEffect(() => { localStorage.setItem('orbit-home-sizes', JSON.stringify(sizes)); }, [sizes]);
+  const toggleVisible = id => setVisible(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id]);
+  const toggleCollapsed = id => setCollapsed(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id]);
+  const reorder = target => {
+    if (!dragging || dragging === target) return;
+    setOrder(current => { const next = [...current]; const from = next.indexOf(dragging), to = next.indexOf(target); if (from < 0 || to < 0) return current; next.splice(from, 1); next.splice(to, 0, dragging); return next; });
+    setDragging('');
+  };
+  const totalBytes = Number(stats?.total_bytes || 0);
+  const freeBytes = Number(stats?.free_bytes || 0);
+  const usedBytes = Math.max(0, totalBytes - freeBytes);
+  const usage = totalBytes ? Math.min(100, usedBytes / totalBytes * 100) : 0;
+  const gib = value => `${(Number(value || 0) / 1024 ** 3).toFixed(2)} GiB`;
+  const formatCount = value => Number(value || 0).toLocaleString();
+  const groups = [
+    { label: 'Drive', kind: 'file', color: 'blue' },
+    { label: 'Music', kind: 'music', color: 'slate' },
+    { label: 'Movies', kind: 'movie', color: 'violet' },
+  ].map(group => { const groupItems = items.filter(item => item.kind === group.kind); return { ...group, count: groupItems.length }; });
+  const current = systemMetrics?.current;
+  const history = systemMetrics?.history || [];
+  const memoryUsed = Number(current?.memory_used_bytes || 0);
+  const memoryAvailable = Number(current?.memory_available_bytes || 0);
+  const storageRows = stats ? [{ label: 'Used', value: usedBytes, color: 'blue' }, { label: 'Available', value: freeBytes, color: 'slate' }] : [];
+  const libraryRows = groups.map(group => ({ label: group.label, value: group.count, color: group.color }));
+  const panelOptions = [
+    ['temperature', 'CPU temperature'], ['network', 'Interface traffic'], ['library', 'Library distribution'],
+    ['disk', 'Disk I/O'], ['cpu', 'CPU utilization'], ['load', 'System load'],
+    ['memory', 'Memory'], ['storage', 'Filesystem capacity'],
+  ];
+  const panels = {
+    temperature: ['CPU Temperature', 'Host thermal sensor · °C', <LineChart title="CPU temperature" unit="°C" points={history} series={[{ key: 'cpu_temperature_c', label: 'CPU', color: 'amber' }]} format={value => `${value.toFixed(1)} °C`}/>],
+    network: ['Interface Traffic', 'Aggregate receive / transmit · MiB/s', <LineChart title="Interface traffic" unit="MiB/s" points={history} series={[{ key: 'network_rx_bytes_per_sec', label: 'Receive', color: 'blue', scale: 1024 ** 2 }, { key: 'network_tx_bytes_per_sec', label: 'Transmit', color: 'violet', scale: 1024 ** 2 }]} format={value => `${value.toFixed(2)} MiB/s`}/>],
+    library: ['Library Distribution', 'Indexed items by collection', <div className="ops-wall-memory"><DonutChart rows={libraryRows} centerValue={formatCount(items.length)} centerLabel="items"/><div className="ops-donut-legend">{groups.map(group => <span key={group.label}><i className={group.color}/>{group.label}<strong>{formatCount(group.count)}</strong></span>)}</div></div>],
+    disk: ['Disk Activity', 'Aggregate block-device read / write · MiB/s', <LineChart title="Disk activity" unit="MiB/s" points={history} series={[{ key: 'disk_read_bytes_per_sec', label: 'Read', color: 'blue', scale: 1024 ** 2 }, { key: 'disk_write_bytes_per_sec', label: 'Write', color: 'violet', scale: 1024 ** 2 }]} format={value => `${value.toFixed(2)} MiB/s`}/>],
+    cpu: ['CPU Utilization', 'Total host utilization · %', <LineChart title="CPU utilization" unit="%" points={history} series={[{ key: 'cpu_percent', label: 'Total CPU', color: 'blue' }]} min={0} max={100} format={value => `${value.toFixed(1)}%`}/>],
+    load: ['System Load', '1 / 5 / 15 minute load average', <LineChart title="System load" unit="load" points={history} series={[{ key: 'load_1m', label: '1 min', color: 'amber' }, { key: 'load_5m', label: '5 min', color: 'blue' }, { key: 'load_15m', label: '15 min', color: 'slate' }]} format={value => value.toFixed(2)}/>],
+    memory: ['Memory', 'Physical memory allocation', <div className="ops-wall-memory"><DonutChart rows={[{label:'Used',value:memoryUsed,color:'blue'},{label:'Available',value:memoryAvailable,color:'slate'}]} centerValue={current?.memory_percent == null ? '—' : `${current.memory_percent.toFixed(1)}%`} centerLabel="used"/><div className="ops-donut-legend"><span><i className="blue"/>Used<strong>{gib(memoryUsed)}</strong></span><span><i className="slate"/>Available<strong>{gib(memoryAvailable)}</strong></span><small>{current ? `${gib(current.memory_total_bytes)} total` : 'Waiting for memory data'}</small></div></div>],
+    storage: ['Filesystem Capacity', 'NAS media filesystem', <div className="ops-wall-memory"><DonutChart rows={storageRows} centerValue={stats ? `${usage.toFixed(1)}%` : '—'} centerLabel="used"/><div className="ops-donut-legend"><span><i className="blue"/>Used<strong>{gib(usedBytes)}</strong></span><span><i className="slate"/>Available<strong>{gib(freeBytes)}</strong></span><small>{stats ? `${gib(totalBytes)} total` : 'Waiting for filesystem stats'}</small></div></div>],
+  };
+  return <div className="ops-overview ops-monitor-wall">
+    <header className="ops-wall-header">
+      <div className="ops-wall-brand"><span className="ops-wall-title">General / <strong>NAS Overview</strong></span><span className="ops-wall-updated">{current ? `Updated ${new Date(current.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Waiting for host telemetry'}</span></div>
+      <div className="ops-wall-controls">
+        <div className="ops-range-switch" role="group" aria-label="Chart time range">{[1, 3, 6, 24].map(hours => <button key={hours} className={metricsRange === hours ? 'active' : ''} onClick={() => onMetricsRange(hours)}>{hours}h</button>)}</div>
+        <button className="ops-customize-button" onClick={() => setCustomizeOpen(value => !value)} aria-expanded={customizeOpen}><SlidersHorizontal size={13}/> Panels</button>
+        <button className="ops-customize-button" onClick={() => { setOrder(defaults); setSizes({}); setVisible(defaults); setCollapsed([]); }} title="Restore the default dashboard layout">Reset</button>
+        {customizeOpen && <div className="ops-customize-menu">
+          <div className="ops-customize-heading"><strong>Visible panels</strong><button onClick={() => setCustomizeOpen(false)} aria-label="Close panel settings"><X size={14}/></button></div>
+          {panelOptions.map(([id, label]) => <label key={id} className="ops-panel-option"><input type="checkbox" checked={visible.includes(id)} onChange={() => toggleVisible(id)}/><span>{label}</span></label>)}
+        </div>}
+      </div>
+    </header>
+    <div className="ops-wall-status"><span><i/>HOST ONLINE</span><span>CPU {current?.cpu_percent == null ? '—' : `${current.cpu_percent.toFixed(1)}%`}</span><span>RAM {current?.memory_percent == null ? '—' : `${current.memory_percent.toFixed(1)}%`}</span><span>UPTIME {current ? durationLabel(current.uptime_seconds) : '—'}</span><span>STORAGE {stats ? `${usage.toFixed(1)}% USED` : '—'}</span></div>
+    <div className="ops-wall-grid">
+      {order.filter(id => visible.includes(id)).map(id => {
+        const [title, subtitle, content] = panels[id];
+        return <DashboardSection key={id} id={id} title={title} subtitle={subtitle} collapsed={collapsed.includes(id)} onToggle={toggleCollapsed} size={sizes[id] || 'normal'} onSize={size => setSizes(currentSizes => ({...currentSizes,[id]:size}))} dragging={dragging === id} onDragStart={() => setDragging(id)} onDragEnd={() => setDragging('')} onDrop={() => reorder(id)}>{content}</DashboardSection>;
+      })}
     </div>
-    <section className="storage-panel"><div className="panel-title"><div><p className="eyebrow">DISK USAGE</p><h3>Storage health</h3></div><span className="online-pill"><span/> Healthy</span></div><div className="storage-track"><span style={{ width: `${usage}%` }}/></div><div className="storage-caption"><span>{stats ? `${Math.round(usage)}% used` : 'Loading disk usage'}</span><span>{stats ? `${bytes(stats.free_bytes)} available` : ''}</span></div></section>
-    <section className="workspace-grid">
-      <WorkspaceCard icon={<HardDrive size={20}/>} tone="blue" title="Drive" count={items.length} detail="All files and folders" onClick={() => onNavigate('drive')} />
-      <WorkspaceCard icon={<AudioLines size={20}/>} tone="mint" title="Music" count={items.filter(item => item.kind === 'music').length} detail="Audio ready to play" onClick={() => onNavigate('music')} />
-      <WorkspaceCard icon={<Film size={20}/>} tone="peach" title="Movies" count={items.filter(item => item.kind === 'movie').length} detail="Video ready to stream" onClick={() => onNavigate('movies')} />
-    </section>
-    <section className="admin-panel"><div className="panel-title"><div><p className="eyebrow">ADMINISTRATION</p><h3>Server tools</h3></div></div><div className="admin-actions"><button className="admin-action" onClick={() => onAdmin('scan')} disabled={busy}><RefreshCw size={18}/><span><strong>Scan library</strong><small>Index files added outside the apps</small></span><ChevronRight size={17}/></button><button className="admin-action" onClick={() => onAdmin('backup')} disabled={busy}><Database size={18}/><span><strong>Back up database</strong><small>Create a point-in-time catalog backup</small></span><ChevronRight size={17}/></button></div></section>
-    <section className="activity-panel"><div className="panel-title"><div><p className="eyebrow">RECENT ACTIVITY</p><h3>Latest changes</h3></div></div>{audit.length ? <div className="activity-list">{audit.map(event => <div className="activity-row" key={event.id}><span className="activity-dot"/><span className="activity-copy"><strong>{String(event.action).replaceAll('.', ' ')}</strong><small>{event.subject}</small></span><time>{dateLabel(event.created_at)}</time></div>)}</div> : <p className="empty-activity">Activity will appear here after you make changes.</p>}</section>
+    {!visible.length && <div className="ops-empty-layout">No panels selected. Open Panels to add a monitoring tile.</div>}
+    <p className="ops-wall-footnote">Host-wide network and disk rates are aggregate counters. Temperature is shown only when a readable host sensor exists. SMART, individual disk temperatures and pool-specific telemetry are not available yet.</p>
   </div>;
+}
+
+function DashboardSection({ id, title, subtitle, collapsed, onToggle, size, onSize, dragging, onDragStart, onDragEnd, onDrop, children }) {
+  return <section className={`ops-wall-panel size-${size} ${dragging ? 'is-dragging' : ''}`} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); onDrop(); }}>
+    <header className="ops-wall-panel-heading">
+      <span className="ops-wall-panel-name"><span className="ops-drag-handle" draggable onDragStart={event => { event.dataTransfer.effectAllowed = 'move'; onDragStart(); }} onDragEnd={onDragEnd} title="Drag to rearrange"><GripVertical size={13}/></span><span><strong>{title}</strong><small>{subtitle}</small></span></span>
+      <span className="ops-tile-actions">
+        <select aria-label={`Resize ${title} tile`} value={size} onChange={event => onSize(event.target.value)} title="Tile size"><option value="normal">1 × 1</option><option value="wide">2 × 1</option><option value="large">2 × 2</option><option value="full">3 × 1</option></select>
+        <button onClick={() => onToggle(id)} aria-label={collapsed ? `Expand ${title}` : `Collapse ${title}`} aria-expanded={!collapsed}><ChevronDown size={14} className={collapsed ? 'is-collapsed' : ''}/></button>
+      </span>
+    </header>
+    {!collapsed && <div className="ops-wall-panel-content">{children}</div>}
+  </section>;
+}
+
+function DonutChart({ rows, centerValue, centerLabel }) {
+  const total = rows.reduce((sum, row) => sum + Math.max(0, Number(row.value) || 0), 0);
+  let cursor = 0;
+  const stops = rows.map(row => {
+    const start = total ? cursor / total * 100 : 0;
+    cursor += Math.max(0, Number(row.value) || 0);
+    const end = total ? cursor / total * 100 : 0;
+    return `var(--ops-${row.color}) ${start}% ${end}%`;
+  }).join(', ');
+  return <div className="ops-donut-wrap"><div className="ops-donut" style={{ background: total ? `conic-gradient(${stops})` : 'var(--ops-donut-empty)' }}><div><strong>{centerValue}</strong><small>{centerLabel}</small></div></div></div>;
+}
+
+function SystemValue({ label, value, detail }) {
+  return <div className="ops-system-value"><span>{label}</span><strong>{value}</strong><small>{detail}</small></div>;
+}
+
+function durationLabel(seconds) {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  const days = Math.floor(total / 86400);
+  const hours = Math.floor((total % 86400) / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  return days ? `${days}d ${hours}h` : hours ? `${hours}h ${minutes}m` : `${minutes}m`;
+}
+
+function LineChart({ title, unit, points, series, min, max, format }) {
+  const width = 640, height = 160, padX = 8, padY = 12;
+  const values = points.flatMap(point => series.map(item => point[item.key] == null ? null : Number(point[item.key]) / (item.scale || 1))).filter(value => value != null && Number.isFinite(value));
+  const low = min ?? 0;
+  const high = max ?? Math.max(1, ...values) * 1.12;
+  const pathFor = item => points.map((point, index) => {
+    const raw = point[item.key];
+    if (raw == null || !Number.isFinite(Number(raw))) return null;
+    const value = Number(raw) / (item.scale || 1);
+    const x = padX + (points.length <= 1 ? 0 : index / (points.length - 1) * (width - padX * 2));
+    const y = height - padY - (Math.max(low, Math.min(high, value)) - low) / Math.max(0.000001, high - low) * (height - padY * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).filter(Boolean).join(' ');
+  const latest = series.map(item => ({ ...item, value: points.at(-1)?.[item.key] == null ? null : Number(points.at(-1)[item.key]) / (item.scale || 1) }));
+  return <section className="ops-chart-panel ops-line-chart">
+    <div className="ops-panel-heading"><div><h4>{title}</h4></div><span className="ops-panel-value">{unit}</span></div>
+    {values.length ? <>
+      <div className="ops-line-plot"><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title} preserveAspectRatio="none">
+        {[0, .5, 1].map(fraction => <line key={fraction} x1="0" x2={width} y1={padY + fraction * (height - padY * 2)} y2={padY + fraction * (height - padY * 2)} className="ops-chart-gridline" />)}
+        {series.map(item => <polyline key={item.key} points={pathFor(item)} className={`ops-line ${item.color}`} />)}
+      </svg></div>
+      <div className="ops-line-legend">{latest.map(item => <span key={item.key}><i className={item.color}/>{item.label}<strong>{item.value == null ? '—' : format(item.value)}</strong></span>)}</div>
+      <div className="ops-line-time"><span>{points[0]?.timestamp ? new Date(points[0].timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span><span>{points.at(-1)?.timestamp ? new Date(points.at(-1).timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span></div>
+    </> : <p className="ops-empty">Waiting for valid samples.</p>}
+  </section>;
+}
+
+function Metric({ label, value, detail }) {
+  return <article className="ops-metric"><span className="ops-metric-label">{label}</span><strong>{value}</strong><small>{detail}</small></article>;
+}
+
+function BarChart({ title, kicker, rows, format, unit, empty }) {
+  const max = Math.max(0, ...rows.map(row => row.value));
+  return <section className="ops-panel ops-chart-panel">
+    <div className="ops-panel-heading"><div><span className="ops-kicker">{kicker}</span><h3>{title}</h3></div><span className="ops-panel-value">{unit}</span></div>
+    {max > 0 ? <div className="ops-chart-bars">{rows.map(row => <div className="ops-chart-row" key={row.label}>
+      <div className="ops-chart-label"><span>{row.label}</span><strong>{format(row.value)}</strong></div>
+      <div className="ops-chart-track"><span className={`ops-chart-fill ${row.color}`} style={{ width: `${Math.max(1, row.value / max * 100)}%` }}/></div>
+    </div>)}</div> : <p className="ops-empty">{empty}</p>}
+  </section>;
 }
 
 function StatCard({ icon, label, value, detail, tone }) {
@@ -509,7 +660,7 @@ function FolderCard({ folder, folders, items, onOpen, onEdit, onDelete, draggabl
   </article>;
 }
 
-function MediaCard({ item, liked, onOpen, onEdit, onDelete, onFavorite, onPlaylist, playlistMode, onDownload, draggable = false, onDragStart }) {
+function MediaCard({ item, onOpen, onEdit, onDelete, onPlaylist, playlistMode, onDownload, draggable = false, onDragStart }) {
   const kindLabel = item.kind === 'music' ? 'MUSIC' : item.kind === 'movie' ? item.media_type === 'show' ? 'TV SHOW' : 'MOVIE' : extension(item.name);
   const artwork = item.artwork_url || (item.artwork_path ? apiUrl(`/api/artwork/${item.id}`) : null);
   const ArtIcon = item.kind === 'music' ? FileAudio : item.kind === 'movie' ? FileVideo : /\.(png|jpe?g|gif|webp|heic)$/i.test(item.name) ? FileImage : File;
@@ -519,7 +670,7 @@ function MediaCard({ item, liked, onOpen, onEdit, onDelete, onFavorite, onPlayli
       <ArtIcon size={37}/><span>{kindLabel}</span>
     </div>
     <div className="asset-info"><strong title={item.name}>{item.title || item.name}</strong><small>{item.kind === 'music' ? [item.artist, item.album].filter(Boolean).join(' · ') || item.name : item.kind === 'movie' ? [item.media_type === 'show' ? 'TV show' : 'Movie', item.language, item.genre].filter(Boolean).join(' · ') : item.name}{item.size ? ` · ${bytes(item.size)}` : ''}</small></div>
-  </button><button className={`favorite-action ${liked ? 'liked' : ''}`} title={liked ? 'Remove from favorites' : 'Add to favorites'} onClick={onFavorite}><Heart size={16} fill={liked ? 'currentColor' : 'none'}/></button><CardMenu onEdit={onEdit} onDelete={onDelete} onPlaylist={onPlaylist} playlistMode={playlistMode} onDownload={onDownload} /></article>;
+  </button><CardMenu onEdit={onEdit} onDelete={onDelete} onPlaylist={onPlaylist} playlistMode={playlistMode} onDownload={onDownload} /></article>;
 }
 
 function CardMenu({ onEdit, onDelete, onPlaylist, playlistMode, onDownload }) {
