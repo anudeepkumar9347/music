@@ -497,10 +497,10 @@ function Overview({ stats, items, folders, audit, onNavigate, onAdmin, busy }) {
     </section>
 
     <section className="ops-metrics" aria-label="Storage and library metrics">
-      <Metric label="CATALOGUED ITEMS" value={formatCount(stats?.items)} detail={`${formatCount(folders.length)} folders · ${formatCount(items.length)} indexed records`} />
-      <Metric label="CATALOG SIZE" value={gib(catalogBytes)} detail={`${tib(catalogBytes)} · media catalog only`} />
-      <Metric label="FILESYSTEM USED" value={gib(usedBytes)} detail={`${usage.toFixed(1)}% of total capacity`} />
-      <Metric label="AVAILABLE SPACE" value={gib(freeBytes)} detail={`${tib(totalBytes)} total filesystem capacity`} />
+      <Metric label="CATALOGUED ITEMS" value={stats ? formatCount(stats.items) : '—'} detail={`${formatCount(folders.length)} folders · ${formatCount(items.length)} indexed records`} />
+      <Metric label="CATALOG SIZE" value={stats ? gib(catalogBytes) : '—'} detail={stats ? `${tib(catalogBytes)} · media catalog only` : 'Waiting for filesystem stats'} />
+      <Metric label="FILESYSTEM USED" value={stats ? gib(usedBytes) : '—'} detail={stats ? `${usage.toFixed(1)}% of total capacity` : 'Waiting for filesystem stats'} />
+      <Metric label="AVAILABLE SPACE" value={stats ? gib(freeBytes) : '—'} detail={stats ? `${tib(totalBytes)} total filesystem capacity` : 'Waiting for filesystem stats'} />
     </section>
 
     <section className="ops-panel ops-capacity-panel">
