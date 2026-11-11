@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
-  Activity, ArrowDownToLine, ArrowLeft, AudioLines, Check, ChevronRight, CircleHelp, Cloud,
+  Activity, ArrowDownToLine, ArrowLeft, AudioLines, Check, ChevronDown, ChevronRight, CircleHelp, Cloud,
   Database, Film, File, FileAudio, FileImage, FileVideo, Folder, FolderPlus, HardDrive,
   LayoutDashboard, ListFilter, LoaderCircle, MoreHorizontal, Moon, Pencil, Plus,
-  RefreshCw, Search, Settings2, ShieldCheck, Sun, Trash2, Upload, X, ListMusic, Languages,
+  RefreshCw, Search, Settings2, ShieldCheck, SlidersHorizontal, Sun, Trash2, Upload, X, ListMusic, Languages,
 } from 'lucide-react';
 import './styles.css';
 
