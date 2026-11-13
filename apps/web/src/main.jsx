@@ -142,6 +142,37 @@ function App() {
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
+    if (section !== 'drive') return undefined;
+    let active = true;
+    let inFlight = false;
+    const syncDrive = async () => {
+      if (inFlight || document.visibilityState === 'hidden') return;
+      inFlight = true;
+      try {
+        const term = query.trim();
+        const [nextItems, nextFolders, nextSearch] = await Promise.all([
+          api('/api/library'),
+          api('/api/folders'),
+          term.length >= 2 ? api(`/api/search?q=${encodeURIComponent(term)}`) : Promise.resolve(null),
+        ]);
+        if (active) {
+          setItems(nextItems); setFolders(nextFolders); setSearchItems(nextSearch);
+        }
+      } catch (cause) {
+        if (active) setError(cause.message || 'Could not refresh Drive files.');
+      } finally { inFlight = false; }
+    };
+    window.addEventListener('focus', syncDrive);
+    document.addEventListener('visibilitychange', syncDrive);
+    const timer = window.setInterval(syncDrive, 15000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', syncDrive);
+      document.removeEventListener('visibilitychange', syncDrive);
+    };
+  }, [query, section]);
+  useEffect(() => {
     if (section !== 'overview') return undefined;
     let active = true;
     const refreshMetrics = () => {
