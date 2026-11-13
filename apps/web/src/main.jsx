@@ -16,6 +16,7 @@ const getToken = () => ENV_API_TOKEN || localStorage.getItem('orbit-api-token') 
 // This avoids browser CORS failures when the dev server is opened over LAN/Tailscale.
 const getApiBaseUrl = () => (import.meta.env.DEV ? '' : ENV_API_URL || localStorage.getItem('orbit-api-url') || '').replace(/\/+$/, '');
 const apiUrl = path => `${getApiBaseUrl()}${path}`;
+const sameId = (left, right) => left == null || right == null ? left == null && right == null : Number(left) === Number(right);
 const api = async (path, options = {}) => {
   const savedToken = ENV_API_TOKEN ? '' : localStorage.getItem('orbit-api-token');
   const headers = new Headers(options.headers || {});
@@ -214,13 +215,13 @@ function App() {
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [query]);
 
-  const currentFolder = folders.find(folder => folder.id === folderId) || null;
+  const currentFolder = folders.find(folder => sameId(folder.id, folderId)) || null;
   const currentUpload = uploadQueue[uploadIndex] || null;
   const driveFiles = useMemo(() => items.filter(item => item.kind === 'file'), [items]);
   const sectionItems = useMemo(() => {
     const kind = section === 'music' ? 'music' : section === 'movies' ? 'movie' : 'file';
     const source = searchItems || items;
-    let filtered = source.filter(item => (section === 'drive' ? item.kind === 'file' : item.kind === kind) && (section !== 'drive' || (item.folder_id ?? null) === folderId));
+    let filtered = source.filter(item => (section === 'drive' ? item.kind === 'file' : item.kind === kind) && (section !== 'drive' || sameId(item.folder_id, folderId)));
     if (section === 'music' && activePlaylist) filtered = playlistContents;
     if (section === 'movies' && movieTypeFilter !== 'all') filtered = filtered.filter(item => (item.media_type || 'movie') === movieTypeFilter);
     if (languageFilter) filtered = filtered.filter(item => item.language === languageFilter);
@@ -231,7 +232,7 @@ function App() {
     const matched = sectionItems.filter(item => !query.trim() || searchItems || `${item.name} ${item.title || ''} ${item.artist || ''} ${item.album || ''}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
     return [...matched].sort((a, b) => sort === 'name' ? (a.title || a.name).localeCompare(b.title || b.name) : sort === 'size' ? (b.size || 0) - (a.size || 0) : String(b.created_at || '').localeCompare(String(a.created_at || '')));
   }, [query, searchItems, sectionItems, sort]);
-  const visibleFolders = section === 'drive' ? folders.filter(folder => folder.parent_id === folderId && (!query.trim() || folder.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))) : [];
+  const visibleFolders = section === 'drive' ? folders.filter(folder => sameId(folder.parent_id, folderId) && (!query.trim() || folder.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))) : [];
   const languages = useMemo(() => [...new Set(items.filter(item => section === 'music' ? item.kind === 'music' : item.kind === 'movie').map(item => item.language).filter(Boolean))].sort(), [items, section]);
   const genres = useMemo(() => [...new Set(items.filter(item => section === 'music' ? item.kind === 'music' : item.kind === 'movie').map(item => item.genre).filter(Boolean))].sort(), [items, section]);
   const categoryCounts = useMemo(() => ({
@@ -246,6 +247,7 @@ function App() {
     setFolderId(folder.id);
     setFolderTrail(previous => [...previous, folder]);
     setQuery(''); setSearchItems(null);
+    void load({ quiet: true });
   };
   const goToTrail = index => {
     const next = folderTrail.slice(0, index + 1);
@@ -795,7 +797,7 @@ function WorkspaceCard({ icon, tone, title, count, detail, onClick }) {
 }
 
 function FolderCard({ folder, folders, items, onOpen, onEdit, onDelete, draggable = false, onDragStart, onDragOver, onDragLeave, onDrop }) {
-  const count = folders.filter(child => child.parent_id === folder.id).length + items.filter(item => item.folder_id === folder.id).length;
+  const count = folders.filter(child => sameId(child.parent_id, folder.id)).length + items.filter(item => sameId(item.folder_id, folder.id)).length;
   return <article className="asset-card folder-asset" draggable={draggable} onDragStart={onDragStart} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}><button className="asset-main" onClick={onOpen}><div className={`asset-preview folder-preview ${count ? 'has-files' : ''}`}><Folder size={42}/><span>{count ? `${count} items` : 'Empty folder'}</span></div><div className="asset-info"><strong title={folder.name}>{folder.name}</strong><small>{count} {count === 1 ? 'item' : 'items'}</small></div></button><CardMenu onEdit={onEdit} onDelete={onDelete} />
   </article>;
 }
