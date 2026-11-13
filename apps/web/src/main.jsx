@@ -8,18 +8,21 @@ import {
 } from 'lucide-react';
 import './styles.css';
 
-const DEV_TOKEN = import.meta.env.VITE_API_TOKEN || 'orbit-local-dev-token';
+const ENV_API_TOKEN = import.meta.env.VITE_API_TOKEN || '';
+const DEV_TOKEN = ENV_API_TOKEN || 'orbit-local-dev-token';
 const ENV_API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
-const getToken = () => localStorage.getItem('orbit-api-token') || DEV_TOKEN;
-const getApiBaseUrl = () => (localStorage.getItem('orbit-api-url') ?? ENV_API_URL).replace(/\/+$/, '');
+const getToken = () => ENV_API_TOKEN || localStorage.getItem('orbit-api-token') || DEV_TOKEN;
+// In dev, keep API requests same-origin so Vite can proxy them to the NAS.
+// This avoids browser CORS failures when the dev server is opened over LAN/Tailscale.
+const getApiBaseUrl = () => (import.meta.env.DEV ? '' : ENV_API_URL || localStorage.getItem('orbit-api-url') || '').replace(/\/+$/, '');
 const apiUrl = path => `${getApiBaseUrl()}${path}`;
 const api = async (path, options = {}) => {
-  const savedToken = localStorage.getItem('orbit-api-token');
+  const savedToken = ENV_API_TOKEN ? '' : localStorage.getItem('orbit-api-token');
   const headers = new Headers(options.headers || {});
-  headers.set('Authorization', `Bearer ${savedToken || DEV_TOKEN}`);
+  headers.set('Authorization', `Bearer ${getToken()}`);
   if (!(options.body instanceof FormData)) headers.set('Accept', 'application/json');
   let response = await fetch(apiUrl(path), { ...options, headers });
-  if (response.status === 401 && savedToken && savedToken !== DEV_TOKEN && !options.body) {
+  if (!ENV_API_TOKEN && response.status === 401 && savedToken && savedToken !== DEV_TOKEN && !options.body) {
     const fallbackHeaders = new Headers(headers);
     fallbackHeaders.set('Authorization', `Bearer ${DEV_TOKEN}`);
     const fallbackResponse = await fetch(apiUrl(path), { ...options, headers: fallbackHeaders });
@@ -606,7 +609,7 @@ function App() {
     {currentUpload && uploadForm && <UploadMetadataDialog kind={section === 'music' ? 'music' : 'movie'} file={currentUpload} index={uploadIndex} total={uploadQueue.length} form={uploadForm} setForm={setUploadForm} lookupBusy={uploadLookupBusy} lookupMessage={uploadLookupMessage} uploading={busy} uploadProgress={uploadProgress} uploadPercent={uploadPercent} uploadError={uploadError} onCancel={cancelMediaUpload} onSubmit={submitMediaUpload} />}
     {dialog && <EditDialog kind={dialog.kind} isVideo={dialog.target?.kind === 'movie'} form={form} setForm={setForm} folders={folders} onClose={() => setDialog(null)} onSave={saveDialog} />}
     {playlistPicker && <Modal title="Add to playlist" onClose={() => setPlaylistPicker(null)}><div className="playlist-picker"><p>Add <strong>{playlistPicker.title || playlistPicker.name}</strong> to a music playlist.</p><label>Playlist<select value={playlistChoice} onChange={event => setPlaylistChoice(event.target.value)}><option value="" disabled>Select a playlist</option>{playlists.map(playlist => <option key={playlist.id} value={playlist.id}>{playlist.name}</option>)}</select></label><div className="dialog-actions"><button className="button button-light" onClick={() => setPlaylistPicker(null)}>Cancel</button><button className="button button-dark" onClick={() => void playlistAction('add-track', null, playlistPicker)}><ListMusic size={15}/>Add track</button></div></div></Modal>}
-    {settingsOpen && <Modal title="Connection settings" onClose={() => setSettingsOpen(false)}><form onSubmit={saveToken} className="settings-form"><p>Set the NAS API address and the same auth string as <code>API_TOKEN</code> in the server environment. These values are saved only in this browser.</p><label>API server URL<input type="url" placeholder="Leave blank to use this site's /api proxy" value={apiUrlDraft} onChange={event => setApiUrlDraft(event.target.value)} autoComplete="url" /></label><label>Auth string (API token)<input type="password" value={tokenDraft} onChange={event => setTokenDraft(event.target.value)} autoComplete="current-password" /></label><div className="dialog-actions"><button type="button" className="button button-light" onClick={() => setSettingsOpen(false)}>Cancel</button><button className="button button-dark">Save and reconnect</button></div></form></Modal>}
+    {settingsOpen && <Modal title="Connection settings" onClose={() => setSettingsOpen(false)}><form onSubmit={saveToken} className="settings-form"><p>{ENV_API_URL || ENV_API_TOKEN ? 'This website uses the API connection configured for its deployment.' : 'Set the NAS API address and the same auth string as API_TOKEN in the server environment. These values are saved only in this browser.'}</p><label>API server URL<input type="url" placeholder="Leave blank to use this site's /api proxy" value={apiUrlDraft} onChange={event => setApiUrlDraft(event.target.value)} autoComplete="url" disabled={Boolean(ENV_API_URL)} /></label><label>Auth string (API token)<input type="password" value={tokenDraft} onChange={event => setTokenDraft(event.target.value)} autoComplete="current-password" disabled={Boolean(ENV_API_TOKEN)} /></label><div className="dialog-actions"><button type="button" className="button button-light" onClick={() => setSettingsOpen(false)}>Close</button>{!ENV_API_URL && !ENV_API_TOKEN && <button className="button button-dark">Save and reconnect</button>}</div></form></Modal>}
   </div>;
 }
 
