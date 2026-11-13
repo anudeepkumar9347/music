@@ -796,7 +796,7 @@ function WorkspaceCard({ icon, tone, title, count, detail, onClick }) {
 
 function FolderCard({ folder, folders, items, onOpen, onEdit, onDelete, draggable = false, onDragStart, onDragOver, onDragLeave, onDrop }) {
   const count = folders.filter(child => child.parent_id === folder.id).length + items.filter(item => item.folder_id === folder.id).length;
-  return <article className="asset-card folder-asset" draggable={draggable} onDragStart={onDragStart} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}><button className="asset-main" onClick={onOpen}><div className={`asset-preview folder-preview ${count ? 'has-files' : ''}`}><Folder size={42}/><span>{count ? `${count} items` : 'Empty folder'}</span></div><div className="asset-info"><strong title={folder.name}>{folder.name}</strong><small>{count} {count === 1 ? 'item' : 'items'}</small></div></button><CardMenu onEdit={onEdit} onDelete={onDelete} />
+  return <article className="asset-card folder-asset" draggable={draggable} onDragStart={onDragStart} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}><button className="asset-main" onClick={() => onOpen(folder)}><div className={`asset-preview folder-preview ${count ? 'has-files' : ''}`}><Folder size={42}/><span>{count ? `${count} items` : 'Empty folder'}</span></div><div className="asset-info"><strong title={folder.name}>{folder.name}</strong><small>{count} {count === 1 ? 'item' : 'items'}</small></div></button><CardMenu onEdit={onEdit} onDelete={onDelete} />
   </article>;
 }
 
