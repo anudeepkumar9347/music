@@ -400,6 +400,9 @@ function App() {
       const body = dragged.kind === 'folder' ? { parent_id: destinationId } : { folder_id: destinationId };
       await api(endpoint, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       flash(`Moved ${dragged.kind} to ${destinationId == null ? 'My Drive' : 'folder'}.`);
+      // Search results are a separate snapshot from `items`; discard them after
+      // a move so the Drive view cannot keep showing the old folder assignment.
+      setQuery(''); setSearchItems(null);
       await load({ quiet: true });
     } catch (cause) { setError(cause.message || 'Could not move this item.'); }
   }
@@ -428,6 +431,7 @@ function App() {
         await api(`/api/media/${dialog.target.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, name }) });
         flash('Library item updated.');
       }
+      if (dialog.kind === 'edit-folder' || dialog.kind === 'edit-media') { setQuery(''); setSearchItems(null); }
       setDialog(null); await load({ quiet: true });
     } catch (cause) { setError(cause.message || 'Could not save your changes.'); }
   }

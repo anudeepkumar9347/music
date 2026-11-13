@@ -78,6 +78,17 @@ export class DriveApi {
     });
   }
 
+  move(target: DriveMedia | DriveFolder, folderId: number | null) {
+    const isFile = 'kind' in target;
+    const path = isFile ? `/api/media/${target.id}` : `/api/folders/${target.id}`;
+    const body = isFile ? { folder_id: folderId } : { parent_id: folderId };
+    return this.request(path, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
   remove(target: DriveMedia | DriveFolder) {
     const path = 'kind' in target ? `/api/media/${target.id}` : `/api/folders/${target.id}`;
     return this.request(path, { method: 'DELETE' });

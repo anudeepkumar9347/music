@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
+import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -53,6 +54,9 @@ function FileManager() {
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [preview, setPreview] = useState<DriveMedia | null>(null);
   const [recentIds, setRecentIds] = useState<number[]>([]);
+  const [moveTarget, setMoveTarget] = useState<RenameTarget | null>(null);
+  const [moveFolderId, setMoveFolderId] = useState<number | null>(null);
+  const [actionTarget, setActionTarget] = useState<RenameTarget | null>(null);
 
   const currentFolderId = path[path.length - 1]?.id ?? null;
   const currentFolderName = path[path.length - 1]?.name ?? 'My Drive';
@@ -150,6 +154,24 @@ function FileManager() {
     setNameDialog('rename');
   }
 
+  function startMove(target: RenameTarget) {
+    const isFile = 'kind' in target;
+    setMoveTarget(target);
+    setMoveFolderId(isFile ? (target as DriveMedia).folder_id ?? null : (target as DriveFolder).parent_id);
+  }
+
+  async function saveMove() {
+    if (!moveTarget) return;
+    try {
+      await driveApi.move(moveTarget, moveFolderId);
+      setMoveTarget(null);
+      await refresh(false);
+      setMessage(`Moved ${moveTarget.name}.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not move this item.');
+    }
+  }
+
   async function saveName() {
     const name = nameValue.trim();
     if (!name || name.includes('/') || name.includes('\\')) {
@@ -168,15 +190,7 @@ function FileManager() {
   }
 
   function showActions(target: RenameTarget) {
-    const isFile = 'kind' in target;
-    const isFavorite = isFile && favorites.some((item) => item.id === target.id);
-    const actions: { text: string; onPress?: () => void; style?: 'cancel' | 'destructive' }[] = [
-      ...(isFile ? [{ text: isFavorite ? 'Remove from favorites' : 'Add to favorites', onPress: () => void toggleFavorite(target as DriveMedia) }] : []),
-      { text: 'Rename', onPress: () => startRename(target) },
-      { text: isFile ? 'Delete file' : 'Delete folder', style: 'destructive', onPress: () => confirmDelete(target) },
-      { text: 'Cancel', style: 'cancel' },
-    ];
-    Alert.alert(target.name, undefined, actions);
+    setActionTarget(target);
   }
 
   async function toggleFavorite(item: DriveMedia) {
@@ -213,6 +227,33 @@ function FileManager() {
       setMessage(`Could not share ${item.name}.`);
     }
   }
+
+  async function downloadItem(item: DriveMedia) {
+    try {
+      const destination = new File(Paths.cache, item.name);
+      const downloaded = await File.downloadFileAsync(driveApi.streamUrl(item), destination, { idempotent: true });
+      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(downloaded.uri, { dialogTitle: item.name });
+      else await Linking.openURL(downloaded.uri);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : `Could not download ${item.name}.`);
+    }
+  }
+
+  const moveFolders = useMemo(() => {
+    if (!moveTarget || 'kind' in moveTarget) return folders;
+    const excluded = new Set<number>([moveTarget.id]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const folder of folders) {
+        if (folder.parent_id != null && excluded.has(folder.parent_id) && !excluded.has(folder.id)) {
+          excluded.add(folder.id);
+          changed = true;
+        }
+      }
+    }
+    return folders.filter((folder) => !excluded.has(folder.id));
+  }, [folders, moveTarget]);
 
   function goToFolder(folder: DriveFolder) {
     setPath((previous) => [...previous, { id: folder.id, name: folder.name }]);
@@ -342,6 +383,41 @@ function FileManager() {
       </View></View>
     </Modal>
 
+    <Modal visible={!!moveTarget} transparent animationType="fade" onRequestClose={() => setMoveTarget(null)}>
+      <View style={styles.modalBackdrop}><View style={styles.dialog}>
+        <Text style={styles.dialogTitle}>Move {moveTarget?.name}</Text>
+        <ScrollView style={styles.destinationList}>
+          <Pressable onPress={() => setMoveFolderId(null)} style={styles.destinationRow}>
+            <Ionicons name={moveFolderId == null ? 'radio-button-on' : 'radio-button-off'} size={19} color={colors.accent} />
+            <Text style={styles.destinationName}>My Drive</Text>
+          </Pressable>
+          {moveFolders.map((folder) => <Pressable key={folder.id} onPress={() => setMoveFolderId(folder.id)} style={styles.destinationRow}>
+            <Ionicons name={moveFolderId === folder.id ? 'radio-button-on' : 'radio-button-off'} size={19} color={colors.accent} />
+            <Text numberOfLines={1} style={styles.destinationName}>{folder.name}</Text>
+          </Pressable>)}
+        </ScrollView>
+        <View style={styles.dialogActions}><Pressable onPress={() => setMoveTarget(null)} style={styles.dialogButton}><Text style={styles.dialogCancel}>Cancel</Text></Pressable><Pressable onPress={() => void saveMove()} style={styles.dialogButton}><Text style={styles.dialogConfirm}>Move</Text></Pressable></View>
+      </View></View>
+    </Modal>
+
+    <Modal visible={!!actionTarget} transparent animationType="fade" onRequestClose={() => setActionTarget(null)}>
+      <Pressable style={styles.modalBackdrop} onPress={() => setActionTarget(null)}>
+        <Pressable style={styles.dialog} onPress={(event) => event.stopPropagation()}>
+          <Text numberOfLines={1} style={styles.dialogTitle}>{actionTarget?.name}</Text>
+          {actionTarget && 'kind' in actionTarget ? <>
+            <ActionRow icon={favorites.some((item) => item.id === actionTarget.id) ? 'heart-dislike-outline' : 'heart-outline'} label={favorites.some((item) => item.id === actionTarget.id) ? 'Remove from favorites' : 'Add to favorites'} onPress={() => { setActionTarget(null); void toggleFavorite(actionTarget); }} />
+            <ActionRow icon="download-outline" label="Download / share" onPress={() => { setActionTarget(null); void downloadItem(actionTarget); }} />
+          </> : null}
+          {actionTarget ? <>
+            <ActionRow icon="folder-open-outline" label="Move to folder" onPress={() => { const target = actionTarget; setActionTarget(null); startMove(target); }} />
+            <ActionRow icon="pencil-outline" label="Rename" onPress={() => { const target = actionTarget; setActionTarget(null); startRename(target); }} />
+            <ActionRow icon="trash-outline" label={'kind' in actionTarget ? 'Delete file' : 'Delete folder'} destructive onPress={() => { const target = actionTarget; setActionTarget(null); confirmDelete(target); }} />
+          </> : null}
+          <Pressable onPress={() => setActionTarget(null)} style={styles.actionCancel}><Text style={styles.dialogCancel}>Cancel</Text></Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+
     <Modal visible={!!preview} transparent animationType="fade" onRequestClose={() => setPreview(null)}>
       <View style={styles.previewScreen}><View style={styles.previewHeader}>
         <Pressable onPress={() => setPreview(null)} style={styles.previewAction}><Ionicons name="close" size={23} color="#fff" /></Pressable>
@@ -366,5 +442,11 @@ const styles = StyleSheet.create({
   errorMessage: { color: '#B42318', backgroundColor: '#FEF3F2', padding: 12, borderRadius: 9, marginHorizontal: 17, marginBottom: 12, fontSize: 12 }, statusMessage: { color: colors.textSecondary, fontSize: 12, marginHorizontal: 17, marginBottom: 12 }, loadingOverlay: { ...StyleSheet.absoluteFill, zIndex: 2, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.6)' },
   tabBar: { position: 'absolute', bottom: 0, left: 0, right: 0, minHeight: 62, flexDirection: 'row', justifyContent: 'space-around', paddingTop: 7, paddingHorizontal: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, backgroundColor: colors.surface }, tabButton: { minWidth: 63, minHeight: 47, alignItems: 'center', justifyContent: 'center', gap: 2 }, tabLabel: { color: colors.textMuted, fontSize: 10 }, tabLabelSelected: { color: colors.accent, fontWeight: '600' },
   modalBackdrop: { flex: 1, justifyContent: 'center', paddingHorizontal: 24, backgroundColor: 'rgba(20,30,45,0.3)' }, dialog: { padding: 20, borderRadius: 13, backgroundColor: colors.surface }, dialogTitle: { color: colors.text, fontSize: 18, fontWeight: '600', marginBottom: 15 }, nameInput: { height: 45, paddingHorizontal: 11, borderWidth: 1, borderColor: colors.border, borderRadius: 8, color: colors.text, fontSize: 14 }, dialogActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 18, marginTop: 18 }, dialogButton: { minWidth: 55, minHeight: 35, alignItems: 'center', justifyContent: 'center' }, dialogCancel: { color: colors.textSecondary, fontSize: 14 }, dialogConfirm: { color: colors.accent, fontSize: 14, fontWeight: '600' },
+  destinationList: { maxHeight: 330 }, destinationRow: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 11, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }, destinationName: { flex: 1, color: colors.text, fontSize: 14 },
+  actionRow: { minHeight: 47, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }, actionText: { color: colors.text, fontSize: 14 }, actionDanger: { color: '#B42318' }, actionCancel: { minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: 6 },
   previewScreen: { flex: 1, justifyContent: 'center', backgroundColor: '#101318' }, previewHeader: { position: 'absolute', zIndex: 1, top: 16, left: 8, right: 8, flexDirection: 'row', alignItems: 'center' }, previewAction: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }, previewTitle: { flex: 1, color: '#fff', fontSize: 14, textAlign: 'center' }, previewImage: { width: '100%', height: '80%' },
 });
+
+function ActionRow({ icon, label, onPress, destructive = false }: { icon: React.ComponentProps<typeof Ionicons>['name']; label: string; onPress: () => void; destructive?: boolean }) {
+  return <Pressable onPress={onPress} style={styles.actionRow}><Ionicons name={icon} size={19} color={destructive ? '#B42318' : colors.accent} /><Text style={[styles.actionText, destructive && styles.actionDanger]}>{label}</Text></Pressable>;
+}
